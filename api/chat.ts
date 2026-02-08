@@ -36,7 +36,7 @@ Rules:
 ${topicSection}
 
 ═══ NEWSPAPER OCR TEXT ═══
-${(newspaperContext || '').slice(0, 10000)}
+${(newspaperContext || '').replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').replace(/\n{3,}/g, '\n\n').slice(0, 10000)}
 ═══ END ═══`;
 
     const payload = {

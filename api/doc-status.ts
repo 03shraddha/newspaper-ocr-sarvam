@@ -68,8 +68,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'No content extracted from PDF' });
     }
 
-    console.log(`Doc Intel ${jobId} done — extracted ${markdown.length} chars`);
-    res.json({ state: jobState, content: markdown.trim(), request_id: jobId });
+    // Strip base64-embedded images from markdown — they bloat context and are useless for text chat
+    const cleanMarkdown = markdown
+      .replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '')
+      .replace(/\[.*?\]:\s*data:[^\s]+/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    console.log(`Doc Intel ${jobId} done — extracted ${markdown.length} chars, cleaned to ${cleanMarkdown.length} chars`);
+    res.json({ state: jobState, content: cleanMarkdown, request_id: jobId });
   } catch (err) {
     console.error('Doc status error:', err);
     res.status(500).json({ error: (err as Error).message });

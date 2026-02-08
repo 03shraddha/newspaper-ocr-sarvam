@@ -273,8 +273,15 @@ app.post('/api/doc-status', async (req: express.Request, res: express.Response) 
       return;
     }
 
-    console.log(`Doc Intel ${jobId} done — extracted ${markdown.length} chars`);
-    res.json({ state: jobState, content: markdown.trim(), request_id: jobId });
+    // Strip base64-embedded images from markdown — they bloat context and are useless for text chat
+    const cleanMarkdown = markdown
+      .replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '')   // ![alt](data:image/...base64...)
+      .replace(/\[.*?\]:\s*data:[^\s]+/g, '')       // [ref]: data:image/...
+      .replace(/\n{3,}/g, '\n\n')                    // collapse excess blank lines
+      .trim();
+
+    console.log(`Doc Intel ${jobId} done — extracted ${markdown.length} chars, cleaned to ${cleanMarkdown.length} chars`);
+    res.json({ state: jobState, content: cleanMarkdown, request_id: jobId });
   } catch (err) {
     console.error('Doc status route error:', err);
     res.status(500).json({ error: (err as Error).message });
@@ -419,7 +426,7 @@ Rules:
 ${topicSection}
 
 ═══ NEWSPAPER OCR TEXT ═══
-${(newspaperContext || '').slice(0, 10000)}
+${(newspaperContext || '').replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').replace(/\n{3,}/g, '\n\n').slice(0, 10000)}
 ═══ END ═══`;
 
     const payload = {
