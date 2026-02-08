@@ -181,11 +181,15 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
     // Step 3: Upload PDF to presigned URL
     const uploadRes = await fetch(presignedUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/pdf' },
+      headers: {
+        'Content-Type': 'application/pdf',
+        'x-ms-blob-type': 'BlockBlob',
+      },
       body: new Uint8Array(file.buffer),
     });
     if (!uploadRes.ok) {
-      console.error('Doc Intel file upload error:', uploadRes.status);
+      const errText = await uploadRes.text().catch(() => '');
+      console.error('Doc Intel file upload error:', uploadRes.status, errText);
       res.status(500).json({ error: 'Failed to upload PDF' });
       return;
     }

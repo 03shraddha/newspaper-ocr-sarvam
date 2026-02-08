@@ -62,10 +62,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Step 3: Upload PDF to presigned URL
     const uploadRes = await fetch(presignedUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/pdf' },
-      body: new Uint8Array(buffer),
+      headers: {
+        'Content-Type': 'application/pdf',
+        'x-ms-blob-type': 'BlockBlob',
+      },
+      body: buffer,
     });
     if (!uploadRes.ok) {
+      const errText = await uploadRes.text().catch(() => '');
+      console.error('Doc Intel file upload error:', uploadRes.status, errText);
       return res.status(500).json({ error: 'Failed to upload PDF' });
     }
     console.log('Doc Intel file uploaded');
