@@ -58,8 +58,8 @@ function App() {
       if (isPdf(file)) {
         // ── PDF: Use Document Intelligence API for full-document OCR ──
         setProcessingStage('ocr');
-        setStatus('Extracting text from PDF (Document Intelligence)...');
-        const result = await ocrPdf(file, sourceLang);
+        setStatus('Uploading PDF...');
+        const result = await ocrPdf(file, sourceLang, setStatus);
         allMarkdown = result.content;
 
         // Also generate preview images from PDF

@@ -17,19 +17,55 @@ export async function ocrImage(file: File | Blob, sourceLang?: string): Promise<
 }
 
 // ─── Document Intelligence (PDF OCR) ───
-export async function ocrPdf(file: File, sourceLang?: string): Promise<{ content: string; request_id: string }> {
+export async function ocrPdf(
+  file: File,
+  sourceLang?: string,
+  onStatus?: (msg: string) => void,
+): Promise<{ content: string; request_id: string }> {
+  // Step 1: Upload PDF and start processing job
   const formData = new FormData();
   formData.append('file', file);
   if (sourceLang) {
     formData.append('language', sourceLang);
   }
 
-  const res = await fetch('/api/doc-intelligence', { method: 'POST', body: formData });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as any).error || `PDF OCR failed: ${res.status}`);
+  const startRes = await fetch('/api/doc-intelligence', { method: 'POST', body: formData });
+  if (!startRes.ok) {
+    const err = await startRes.json().catch(() => ({}));
+    throw new Error((err as any).error || `PDF upload failed: ${startRes.status}`);
   }
-  return res.json();
+  const { jobId } = await startRes.json();
+
+  // Step 2: Poll for completion
+  const maxWait = 180_000; // 3 minutes client-side
+  const pollInterval = 3_000;
+  const start = Date.now();
+
+  while (Date.now() - start < maxWait) {
+    await new Promise((r) => setTimeout(r, pollInterval));
+
+    const pollRes = await fetch('/api/doc-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    });
+    if (!pollRes.ok) continue;
+
+    const data = await pollRes.json();
+
+    if (data.state === 'Failed') {
+      throw new Error(data.error || 'Document processing failed');
+    }
+
+    if (data.content) {
+      return { content: data.content, request_id: data.request_id || jobId };
+    }
+
+    // Still processing — update status
+    onStatus?.(`Processing PDF (${data.state})...`);
+  }
+
+  throw new Error('Document processing timed out — please try again');
 }
 
 // ─── Translation ───

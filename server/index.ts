@@ -134,6 +134,7 @@ const pdfUpload = multer({
 
 const DOC_INTEL_BASE = 'https://api.sarvam.ai/doc-digitization/job/v1';
 
+// POST /api/doc-intelligence — Upload PDF, create job, start, return jobId
 app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.Request, res: express.Response) => {
   try {
     const file = req.file;
@@ -142,7 +143,7 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
     const sourceLang = req.body?.language || 'hi-IN';
     const lang = sourceLang === 'auto' ? 'hi-IN' : sourceLang;
 
-    // Step 1: Create job
+    // Create job
     const createRes = await fetch(DOC_INTEL_BASE, {
       method: 'POST',
       headers: { 'api-subscription-key': API_KEY, 'Content-Type': 'application/json' },
@@ -158,15 +159,13 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
     const jobId = jobData.job_id;
     console.log(`Doc Intel job created: ${jobId}`);
 
-    // Step 2: Get upload URL
+    // Get upload URL
     const uploadUrlRes = await fetch(`${DOC_INTEL_BASE}/upload-files`, {
       method: 'POST',
       headers: { 'api-subscription-key': API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: jobId, files: [file.originalname || 'document.pdf'] }),
     });
     if (!uploadUrlRes.ok) {
-      const errText = await uploadUrlRes.text();
-      console.error('Doc Intel upload URL error:', uploadUrlRes.status, errText);
       res.status(500).json({ error: 'Failed to get upload URL' });
       return;
     }
@@ -178,13 +177,10 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
       return;
     }
 
-    // Step 3: Upload PDF to presigned URL
+    // Upload PDF
     const uploadRes = await fetch(presignedUrl, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/pdf',
-        'x-ms-blob-type': 'BlockBlob',
-      },
+      headers: { 'Content-Type': 'application/pdf', 'x-ms-blob-type': 'BlockBlob' },
       body: new Uint8Array(file.buffer),
     });
     if (!uploadRes.ok) {
@@ -193,53 +189,54 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
       res.status(500).json({ error: 'Failed to upload PDF' });
       return;
     }
-    console.log('Doc Intel file uploaded');
 
-    // Step 4: Start job
+    // Start job
     const startRes = await fetch(`${DOC_INTEL_BASE}/${jobId}/start`, {
       method: 'POST',
       headers: { 'api-subscription-key': API_KEY },
     });
     if (!startRes.ok) {
-      const errText = await startRes.text();
-      console.error('Doc Intel start error:', startRes.status, errText);
       res.status(500).json({ error: 'Failed to start processing' });
       return;
     }
-    console.log('Doc Intel job started');
 
-    // Step 5: Poll for completion (max 120s)
-    const maxWait = 120_000;
-    const pollInterval = 3_000;
-    const start = Date.now();
-    let jobState = 'Running';
+    console.log(`Doc Intel job ${jobId} uploaded and started`);
+    res.json({ jobId });
+  } catch (err) {
+    console.error('Doc Intelligence route error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
 
-    while (Date.now() - start < maxWait) {
-      await new Promise((r) => setTimeout(r, pollInterval));
+// POST /api/doc-status — Check job status; if done, download and return markdown
+app.post('/api/doc-status', async (req: express.Request, res: express.Response) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) { res.status(400).json({ error: 'Missing jobId' }); return; }
 
-      const statusRes = await fetch(`${DOC_INTEL_BASE}/${jobId}/status`, {
-        method: 'GET',
-        headers: { 'api-subscription-key': API_KEY },
-      });
-      if (!statusRes.ok) continue;
+    const statusRes = await fetch(`${DOC_INTEL_BASE}/${jobId}/status`, {
+      method: 'GET',
+      headers: { 'api-subscription-key': API_KEY },
+    });
+    if (!statusRes.ok) {
+      res.status(500).json({ error: 'Failed to check job status' });
+      return;
+    }
 
-      const statusData = await statusRes.json() as any;
-      jobState = statusData.job_state;
-      console.log(`Doc Intel status: ${jobState}`);
+    const statusData = await statusRes.json() as any;
+    const jobState = statusData.job_state;
 
-      if (['Completed', 'PartiallyCompleted', 'Failed'].includes(jobState)) break;
+    if (['Accepted', 'Pending', 'Running'].includes(jobState)) {
+      res.json({ state: jobState });
+      return;
     }
 
     if (jobState === 'Failed') {
-      res.status(500).json({ error: 'Document processing failed' });
-      return;
-    }
-    if (!['Completed', 'PartiallyCompleted'].includes(jobState)) {
-      res.status(504).json({ error: 'Document processing timed out' });
+      res.json({ state: 'Failed', error: 'Document processing failed' });
       return;
     }
 
-    // Step 6: Get download URLs
+    // Completed — download and extract
     const dlRes = await fetch(`${DOC_INTEL_BASE}/${jobId}/download-files`, {
       method: 'POST',
       headers: { 'api-subscription-key': API_KEY },
@@ -256,7 +253,6 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
       return;
     }
 
-    // Step 7: Download ZIP and extract markdown
     const zipRes = await fetch(downloadUrl);
     if (!zipRes.ok) {
       res.status(500).json({ error: 'Failed to download output' });
@@ -264,10 +260,9 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
     }
     const zipBuffer = Buffer.from(await zipRes.arrayBuffer());
     const zip = new AdmZip(zipBuffer);
-    const entries = zip.getEntries();
 
     let markdown = '';
-    for (const entry of entries) {
+    for (const entry of zip.getEntries()) {
       if (entry.entryName.endsWith('.md')) {
         markdown += entry.getData().toString('utf-8') + '\n\n';
       }
@@ -278,10 +273,10 @@ app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.
       return;
     }
 
-    console.log(`Doc Intel done — extracted ${markdown.length} chars`);
-    res.json({ content: markdown.trim(), request_id: jobId });
+    console.log(`Doc Intel ${jobId} done — extracted ${markdown.length} chars`);
+    res.json({ state: jobState, content: markdown.trim(), request_id: jobId });
   } catch (err) {
-    console.error('Doc Intelligence route error:', err);
+    console.error('Doc status route error:', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });
