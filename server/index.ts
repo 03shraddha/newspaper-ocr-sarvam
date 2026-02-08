@@ -419,7 +419,7 @@ Rules:
 ${topicSection}
 
 ═══ NEWSPAPER OCR TEXT ═══
-${(newspaperContext || '').slice(0, 24000)}
+${(newspaperContext || '').slice(0, 10000)}
 ═══ END ═══`;
 
     const payload = {
