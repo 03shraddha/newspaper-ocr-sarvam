@@ -135,7 +135,7 @@ const pdfUpload = multer({
 const DOC_INTEL_BASE = 'https://api.sarvam.ai/doc-digitization/job/v1';
 
 // POST /api/doc-intelligence — Upload PDF, create job, start, return jobId
-app.post('/api/doc-intelligence', pdfUpload.single('file'), async (req: express.Request, res: express.Response) => {
+app.post('/api/doc-intelligence', (req, res, next) => { req.setTimeout(300_000); res.setTimeout(300_000); next(); }, pdfUpload.single('file'), async (req: express.Request, res: express.Response) => {
   try {
     const file = req.file;
     if (!file) { res.status(400).json({ error: 'No PDF uploaded' }); return; }

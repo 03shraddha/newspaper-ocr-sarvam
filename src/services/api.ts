@@ -37,8 +37,8 @@ export async function ocrPdf(
   const { jobId } = await startRes.json();
 
   // Step 2: Poll for completion
-  const maxWait = 180_000; // 3 minutes client-side
-  const pollInterval = 3_000;
+  const maxWait = 600_000; // 10 minutes client-side — large PDFs can take a while
+  const pollInterval = 4_000;
   const start = Date.now();
 
   while (Date.now() - start < maxWait) {
@@ -61,8 +61,9 @@ export async function ocrPdf(
       return { content: data.content, request_id: data.request_id || jobId };
     }
 
-    // Still processing — update status
-    onStatus?.(`Processing PDF (${data.state})...`);
+    // Still processing — update status with elapsed time
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    onStatus?.(`Processing PDF (${data.state}) — ${elapsed}s elapsed...`);
   }
 
   throw new Error('Document processing timed out — please try again');
