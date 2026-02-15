@@ -241,7 +241,7 @@ function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="font-display text-xl sm:text-2xl text-text-primary tracking-wide">
-                Samachar Scan
+                Chat with a Regional Newspaper
               </h1>
               <p className="font-heading text-xs sm:text-sm text-text-secondary mt-0.5 italic hidden sm:block">
                 Upload a regional newspaper. Ask questions. Get answers in any language.

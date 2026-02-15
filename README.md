@@ -1,14 +1,14 @@
-# Samachar Scan
+# Chat with a Regional Newspaper
 
 **An AI-powered newspaper intelligence system for India's 22 official languages.**
 
-Upload a regional newspaper in any Indian language. Samachar Scan extracts every word, identifies headlines, classifies topics, translates to your chosen language, and lets you have a conversation with the full content — all powered by Sarvam AI's India-native language models.
+Upload a regional newspaper in any Indian language. This app extracts every word, identifies headlines, classifies topics, translates to your chosen language, and lets you have a conversation with the full content — all powered by Sarvam AI's India-native language models.
 
 ---
 
 ## Why This Exists
 
-India publishes newspapers in 22 official languages across 13 distinct scripts. A farmer in Karnataka reading Kannada Prabha and a policy researcher in Delhi reading the Hindustan Times are consuming the same national story through completely different linguistic lenses. Samachar Scan bridges that gap: upload any regional newspaper page, and within seconds you can read it in any of India's languages, ask questions about the content, and see headlines organized by topic.
+India publishes newspapers in 22 official languages across 13 distinct scripts. A farmer in Karnataka reading Kannada Prabha and a policy researcher in Delhi reading the Hindustan Times are consuming the same national story through completely different linguistic lenses. This app bridges that gap: upload any regional newspaper page, and within seconds you can read it in any of India's languages, ask questions about the content, and see headlines organized by topic.
 
 The core technical challenge is building a pipeline that can reliably go from a scanned PDF (often with mixed scripts, complex layouts, and print artifacts) to structured, translated, queryable content — using AI models that actually understand Indian languages natively, not as an afterthought.
 

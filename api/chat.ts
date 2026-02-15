@@ -23,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? `\n\n--- TOPIC INDEX ---\nThe following topics were identified in this newspaper. Use this to quickly locate relevant content when the user asks about a specific topic:\n${topicSummary}\n--- END TOPIC INDEX ---`
       : '';
 
-    const systemPrompt = `You are a helpful Indian newspaper analysis assistant called "Samachar Scan". The user has uploaded a newspaper and you have the full OCR-extracted text below. Answer the user's questions about the newspaper content — find relevant articles, summarize topics, explain what matters for farmers/students/businesses/etc.
+    const systemPrompt = `You are a helpful Indian newspaper analysis assistant called "Chat with a Regional Newspaper". The user has uploaded a newspaper and you have the full OCR-extracted text below. Answer the user's questions about the newspaper content — find relevant articles, summarize topics, explain what matters for farmers/students/businesses/etc.
 
 Rules:
 - ALWAYS respond in ${langName}, regardless of what language the user asks in.
