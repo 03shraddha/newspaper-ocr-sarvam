@@ -248,3 +248,37 @@ All 13 Indic scripts render correctly through system fonts and a dedicated `.fon
 ## License
 
 MIT
+
+---
+
+## Interview Reference
+
+### Overview
+
+"Chat with a Regional Newspaper" is an AI pipeline for Indian regional newspapers covering all 22 constitutional languages. A user uploads a PDF or image; the system performs OCR using Sarvam's Document Intelligence or Vision API, extracts and progressively translates headlines, classifies them into eight topic buckets via keyword matching, and enables free-text Q&A over the full extracted content using `sarvam-m`. The backend is a thin Express/TypeScript proxy that keeps API keys server-side; the frontend (React 19, Tailwind CSS v4) streams UI updates as each pipeline stage completes.
+
+---
+
+### Narrative
+
+The project launched under the name **Samachar Scan**, a framing oriented around the document processing capability — scanning and extracting. The final rename to "Chat with a Regional Newspaper" reflects a shift in what the project is actually about: the conversational Q&A layer, not the OCR. That rename came last, after the pipeline was built, which means the insight about the product's core value arrived through building rather than upfront.
+
+The first infrastructure problem hit at the Azure presigned URL step: the Document Intelligence upload was failing because the `x-ms-blob-type: BlockBlob` header was not included in the PUT request. This is not a Sarvam API issue — it is an Azure Blob Storage requirement for presigned uploads — and it would not surface during local development using mock responses. The fix was a one-line header addition, but it blocked all PDF processing in the deployed environment until diagnosed.
+
+The second problem was payload bloat. Sarvam's Document Intelligence API returns its output as Markdown that includes base64-encoded images embedded inline. When this output was passed directly to the chat model as context, the token count inflated by an order of magnitude, consuming budget without adding semantic value. The fix was a stripping pass that removes base64 image blocks before the text enters the chat context.
+
+Serverless deployment imposed the most significant architectural change. The five-stage pipeline was designed as a single sequential request: upload → OCR → extract → translate → classify, all in one server-side handler. Serverless function timeout limits (typically 10–30 seconds) made this unviable for newspaper PDFs, which can take 15–60 seconds to process through Document Intelligence alone. The resolution was splitting document intelligence into two endpoints — one to initiate the job and one to poll and retrieve — so the client orchestrates the waiting rather than the server.
+
+The chat context limit required an explicit tradeoff: `sarvam-m`'s token budget constrained the OCR text passed into the system prompt to 10,000 characters. For a full newspaper page that might contain 50+ articles, this means only a portion of the content is searchable. The limit is hardcoded, not configurable, which means users asking about articles that appear later in a large newspaper will receive incomplete or absent responses.
+
+---
+
+### Technical Reflection
+
+**Constraints encountered.** The `sarvam-m` token limit forces a 10,000-character ceiling on the newspaper context passed to the chat model. For densely printed broadsheet pages, this means the bottom half of the newspaper is effectively invisible to the Q&A system. The Document Intelligence API operates asynchronously with job polling — latency is variable and can reach 60 seconds, which required explicit timeout increases early in development and is still the slowest stage in the pipeline.
+
+**Resolution patterns.** The dual headline extraction strategy — structural Markdown parsing first, AI fallback only when fewer than two headlines are found — is the most defensible design decision in the pipeline. It is fast and free for well-formatted scans, and degrades gracefully rather than failing entirely for poor-quality images. The progressive translation approach (one headline at a time, 150ms delay, immediate UI update) addresses perceived latency without requiring any parallelism infrastructure; the user sees results arriving continuously rather than waiting for a batch.
+
+**Failure points under scale.** The keyword topic classifier scores headlines against static English word lists. This works for standard national news vocabulary but will systematically misclassify hyperlocal stories, vernacular idioms, and code-mixed headlines that don't map to the predefined keyword sets. As newspaper coverage expands to less-urban publications, uncategorized headlines will become the norm rather than the exception. The pipeline's sequential API dependency chain means a single Sarvam API timeout causes the entire pipeline to stall for that user session — there is no partial result caching between stages.
+
+**Long-term maintenance considerations.** The system depends on three distinct Sarvam API surfaces — Document Intelligence, Translation (two model variants), and Chat — each with independent versioning and deprecation timelines. A model version upgrade on any one of them can silently change output format and break the downstream stage. The `mayura:v1` and `sarvam-translate:v1` model selection logic is based on language code matching hardcoded in the route handler; adding support for a new language requires updating this mapping explicitly. The project structure still references `samachar-scan/` in the directory layout documentation, a leftover from the original name that signals the rename was applied to external surfaces (title, README framing) but not fully propagated internally.
