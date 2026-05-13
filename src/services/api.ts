@@ -38,7 +38,7 @@ export async function ocrPdf(
 
   // Step 2: Poll for completion
   const maxWait = 600_000; // 10 minutes client-side — large PDFs can take a while
-  const pollInterval = 4_000;
+  const pollInterval = 2_000;
   const start = Date.now();
 
   while (Date.now() - start < maxWait) {
@@ -113,17 +113,17 @@ export async function translateHeadlines(
   targetLang: string,
   onProgress: (index: number, translated: string) => void,
 ): Promise<void> {
-  for (let i = 0; i < headlines.length; i++) {
-    try {
-      const result = await translateText(headlines[i].original, sourceLang, targetLang);
-      onProgress(i, result.translated_text);
-    } catch (err) {
-      onProgress(i, `[Translation failed: ${(err as Error).message}]`);
-    }
-    // Small delay to avoid rate limiting
-    if (i < headlines.length - 1) {
-      await new Promise((r) => setTimeout(r, 150));
-    }
+  // Fire 4 requests in parallel; call onProgress as each one resolves so the
+  // UI still updates progressively instead of waiting for a full batch.
+  const CONCURRENCY = 4;
+  for (let i = 0; i < headlines.length; i += CONCURRENCY) {
+    await Promise.all(
+      headlines.slice(i, i + CONCURRENCY).map((headline, offset) =>
+        translateText(headline.original, sourceLang, targetLang)
+          .then((result) => onProgress(i + offset, result.translated_text))
+          .catch((err) => onProgress(i + offset, `[Translation failed: ${(err as Error).message}]`))
+      )
+    );
   }
 }
 

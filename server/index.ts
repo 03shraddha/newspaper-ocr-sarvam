@@ -110,7 +110,7 @@ app.post('/api/vision', upload.single('file'), async (req: express.Request, res:
 
       // Only retry on 502/503/504 (server-side transient errors)
       if (![502, 503, 504].includes(lastStatus) || attempt === MAX_RETRIES) break;
-      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
     }
 
     res.status(lastStatus).json({ error: `Vision API error: ${lastStatus}`, detail: lastError });
@@ -313,7 +313,7 @@ app.post('/api/extract-headlines', async (req: express.Request, res: express.Res
     if (!ocrText) { res.status(400).json({ error: 'Missing ocrText' }); return; }
 
     const payload = {
-      model: 'sarvam-m',
+      model: 'sarvam-105b',
       messages: [
         {
           role: 'system',
@@ -347,7 +347,8 @@ app.post('/api/extract-headlines', async (req: express.Request, res: express.Res
     let headlines: string[] = [];
     try {
       const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) headlines = JSON.parse(jsonMatch[0]);
+      if (!jsonMatch) throw new Error('No JSON array in response');
+      headlines = JSON.parse(jsonMatch[0]);
     } catch {
       headlines = content.split('\n').map((l: string) => l.replace(/^[-*\d.]+\s*/, '').trim()).filter((l: string) => l.length > 10);
     }
@@ -430,7 +431,7 @@ ${(newspaperContext || '').replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').replace(/\n
 ═══ END ═══`;
 
     const payload = {
-      model: 'sarvam-m',
+      model: 'sarvam-105b',
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages.slice(-10),
@@ -468,7 +469,13 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: err.message });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`API key: ${API_KEY ? 'configured' : 'MISSING'}`);
-});
+export { app };
+
+// Only start listening when run directly (not when imported by tests)
+const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+if (isMain || process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`API key: ${API_KEY ? 'configured' : 'MISSING'}`);
+  });
+}

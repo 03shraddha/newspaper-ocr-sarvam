@@ -40,7 +40,7 @@ ${(newspaperContext || '').replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').replace(/\n
 ═══ END ═══`;
 
     const payload = {
-      model: 'sarvam-m',
+      model: 'sarvam-105b',
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages.slice(-10),

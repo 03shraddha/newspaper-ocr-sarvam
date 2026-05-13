@@ -4,6 +4,12 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  test: {
+    environment: 'node',
+    globals: false,
+    pool: 'forks',       // avoids ESM/worker issues with supertest
+    testTimeout: 30_000, // E2E calls can be slow
+  },
   server: {
     port: 5173,
     proxy: {

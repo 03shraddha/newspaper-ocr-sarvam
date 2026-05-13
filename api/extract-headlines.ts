@@ -9,7 +9,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!ocrText) return res.status(400).json({ error: 'Missing ocrText' });
 
     const payload = {
-      model: 'sarvam-m',
+      model: 'sarvam-105b',
       messages: [
         {
           role: 'system',
@@ -42,7 +42,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let headlines: string[] = [];
     try {
       const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) headlines = JSON.parse(jsonMatch[0]);
+      if (!jsonMatch) throw new Error('No JSON array in response');
+      headlines = JSON.parse(jsonMatch[0]);
     } catch {
       headlines = content.split('\n').map((l: string) => l.replace(/^[-*\d.]+\s*/, '').trim()).filter((l: string) => l.length > 10);
     }
