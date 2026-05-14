@@ -36,7 +36,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
 
   const isAudioFile = (f: File) =>
     f.type.startsWith('audio/') ||
-    /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(f.name);
+    /\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(f.name);
 
   const handleFile = useCallback((file: File) => {
     const audio = isAudioFile(file);
@@ -49,7 +49,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
     }
 
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/tiff', 'application/pdf'];
-    const audioTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac'];
+    const audioTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/webm'];
     const allValid = [...validTypes, ...audioTypes];
 
     if (
@@ -84,7 +84,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
       };
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
-        const ext = recorder.mimeType.includes('webm') ? 'webm' : 'ogg';
+        const ext = recorder.mimeType.includes('ogg') ? 'ogg' : recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
         onFileSelect(new File([blob], `recording.${ext}`, { type: recorder.mimeType }));
         stream.getTracks().forEach((t) => t.stop());
       };
@@ -132,7 +132,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
       <input
         ref={audioInputRef}
         type="file"
-        accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,audio/flac,.mp3,.wav,.ogg,.m4a,.aac,.flac"
+        accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,audio/flac,audio/webm,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
         className="hidden"
         disabled={disabled}

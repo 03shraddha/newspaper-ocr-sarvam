@@ -57,10 +57,12 @@ async function tryRestSttFallback(
   fileBuffer: Buffer,
   mimeType: string,
   languageCode: string,
+  originalName: string,
 ): Promise<string> {
   const formData = new FormData();
-  const blob = new Blob([new Uint8Array(fileBuffer)], { type: mimeType });
-  formData.append('file', blob, 'audio.wav');
+  const baseType = mimeType.split(';')[0];
+  const blob = new Blob([new Uint8Array(fileBuffer)], { type: baseType });
+  formData.append('file', blob, originalName);
   formData.append('model', 'saaras:v3');
   formData.append('mode', 'transcribe');
   if (languageCode) formData.append('language_code', languageCode);
@@ -129,7 +131,7 @@ router.post(
         if (file.size <= 10 * 1024 * 1024) {
           try {
             console.log('STT Batch: falling back to REST STT');
-            const transcript = await tryRestSttFallback(file.buffer, file.mimetype, languageCode);
+            const transcript = await tryRestSttFallback(file.buffer, file.mimetype, languageCode, file.originalname || 'audio.webm');
             res.json({ jobId: `rest-fallback:${Date.now()}`, transcript });
             return;
           } catch (fallbackErr) {
@@ -178,7 +180,7 @@ router.post(
       const uploadRes = await fetch(presignedUrl, {
         method: 'PUT',
         headers: {
-          'Content-Type': file.mimetype || 'audio/mpeg',
+          'Content-Type': (file.mimetype || 'audio/mpeg').split(';')[0],
           'x-ms-blob-type': 'BlockBlob',
         },
         body: new Uint8Array(file.buffer),

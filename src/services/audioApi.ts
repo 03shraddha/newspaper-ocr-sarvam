@@ -54,7 +54,11 @@ export async function uploadAudio(
     });
 
     if (!pollRes.ok) {
-      // Transient poll error — keep retrying
+      if (pollRes.status >= 400 && pollRes.status < 500) {
+        const errData = await pollRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error || `Transcription polling failed: ${pollRes.status}`);
+      }
+      // 5xx transient error — keep retrying
       console.warn('STT status poll failed, retrying...');
       continue;
     }

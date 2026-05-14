@@ -48,7 +48,9 @@ async function fetchSTTWithRetry(
     try {
       const formData = new FormData();
       const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
-      formData.append('file', audioBlob, 'recording.webm');
+      const baseType = mimeType.split(';')[0];
+      const ext = baseType.includes('ogg') ? 'ogg' : baseType.includes('mp4') ? 'mp4' : baseType.includes('flac') ? 'flac' : baseType.includes('wav') ? 'wav' : baseType.includes('aac') ? 'aac' : baseType.includes('mp3') || baseType.includes('mpeg') ? 'mp3' : 'webm';
+      formData.append('file', audioBlob, `recording.${ext}`);
       formData.append('model', 'saaras:v3');
       formData.append('mode', 'transcribe');
       if (languageCode) {

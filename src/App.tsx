@@ -60,7 +60,7 @@ function App() {
     try {
       let allMarkdown: string;
 
-      if (file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name)) {
+      if (file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(file.name)) {
         // ── Audio: Use STT Batch API for radio/podcast transcription ──
         setProcessingStage('ocr');
         setStatus('Transcribing audio via saaras:v3...');

@@ -61,9 +61,12 @@ export function useSTT() {
 
   const transcribe = async (audioBlob: Blob, langCode: string): Promise<string> => {
     setIsTranscribing(true);
+    setError(null);
     try {
       const formData = new FormData();
-      formData.append('file', audioBlob, 'recording.webm');
+      const baseType = audioBlob.type.split(';')[0];
+      const ext = baseType.includes('ogg') ? 'ogg' : baseType.includes('mp4') ? 'mp4' : baseType.includes('flac') ? 'flac' : baseType.includes('wav') ? 'wav' : baseType.includes('aac') ? 'aac' : baseType.includes('mp3') || baseType.includes('mpeg') ? 'mp3' : 'webm';
+      formData.append('file', audioBlob, `recording.${ext}`);
       formData.append('language_code', langCode);
 
       const controller = new AbortController();
@@ -77,8 +80,11 @@ export function useSTT() {
       clearTimeout(timeout);
 
       const data = await res.json() as { transcript?: string; error?: string };
+      if (data.error) setError(data.error);
       return data.transcript || '';
-    } catch {
+    } catch (err) {
+      const isAbort = err instanceof DOMException && err.name === 'AbortError';
+      setError(isAbort ? 'Transcription timed out – please try a shorter clip' : 'Transcription failed – please try again');
       return '';
     } finally {
       setIsTranscribing(false);
