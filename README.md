@@ -2,167 +2,289 @@
 
 **An AI-powered newspaper intelligence system for India's 22 official languages.**
 
-Upload a regional newspaper in any Indian language. This app extracts every word, identifies headlines, classifies topics, translates to your chosen language, and lets you have a conversation with the full content — all powered by Sarvam AI's India-native language models.
+Upload a regional newspaper in any Indian language — as a PDF, image, or audio recording. The app extracts every word, identifies headlines, auto-detects the source language, translates to your chosen language, classifies stories by topic, and lets you have a full conversation with the content — all through Sarvam AI's India-native language stack.
 
 ---
 
 ## Why This Exists
 
-India publishes newspapers in 22 official languages across 13 distinct scripts. A farmer in Karnataka reading Kannada Prabha and a policy researcher in Delhi reading the Hindustan Times are consuming the same national story through completely different linguistic lenses. This app bridges that gap: upload any regional newspaper page, and within seconds you can read it in any of India's languages, ask questions about the content, and see headlines organized by topic.
+India publishes newspapers in 22 official languages across 13 distinct scripts. A farmer in Karnataka reading *Kannada Prabha* and a policy researcher in Delhi reading the *Hindustan Times* are consuming the same national story through completely different linguistic lenses. This app bridges that gap: upload any regional newspaper page, and within seconds you can read it in any Indian language, ask questions about the content, hear headlines read aloud, and speak your questions instead of typing them.
 
-The core technical challenge is building a pipeline that can reliably go from a scanned PDF (often with mixed scripts, complex layouts, and print artifacts) to structured, translated, queryable content — using AI models that actually understand Indian languages natively, not as an afterthought.
-
----
-
-## AI Pipeline Architecture
-
-The system orchestrates five Sarvam AI models/APIs in sequence. Each stage feeds the next, and the pipeline is designed to degrade gracefully when individual stages produce partial results.
-
-```
-                          PDF                        Image
-                           |                           |
-                           v                           v
-               +------------------------+    +------------------+
-               | Document Intelligence  |    |   Sarvam Vision  |
-               | (sarvam-vision 3B VLM) |    |  (sarvam-vision) |
-               | Async job: create ->   |    | extract_as_md    |
-               | upload -> process ->   |    | Single-image OCR |
-               | download ZIP -> .md    |    +------------------+
-               +------------------------+             |
-                           |                          |
-                           +----------+---------------+
-                                      |
-                                      v
-                            Raw Markdown (OCR output)
-                                      |
-                      +---------------+---------------+
-                      |                               |
-                      v                               v
-             Structural Parse               AI Headline Extraction
-             (regex: #, ##, **)             (sarvam-m 24B chat model)
-             Fast, zero-cost                Fallback when <2 headlines
-                      |                     found structurally
-                      +---------------+---------------+
-                                      |
-                                      v
-                              Headline Objects[]
-                                      |
-                      +---------------+---------------+
-                      |               |               |
-                      v               v               v
-                Translation     Topic Classify    Chat Context
-              (mayura:v1 or     (keyword match    (sarvam-m 24B)
-             sarvam-translate    on English text)  Full OCR text
-                  :v1)                             in system prompt
-                      |               |               |
-                      v               v               v
-                 Translated      8 Topic Buckets   Conversational
-                 Headlines       water | power |   Q&A over the
-                 (progressive    farmers | ...     newspaper
-                  UI updates)
-```
-
-### Stage 1: Document OCR
-
-**For PDFs** — The system uses Sarvam's Document Intelligence API, a purpose-built document processing pipeline that operates on the PDF natively (not rasterized images). This is critical for Indian-language newspapers where complex layouts, mixed scripts, and small print make image-based OCR unreliable.
-
-The Document Intelligence flow is asynchronous and job-based:
-1. Create a processing job with language hint and output format
-2. Obtain a presigned upload URL and PUT the PDF to cloud storage
-3. Start the job and poll for completion (typically 15-60s for a newspaper page)
-4. Download the output ZIP containing structured Markdown
-
-**For images** — Single images go through the Vision API directly using the `extract_as_markdown` prompt type, which instructs the 3B VLM to preserve document structure (headings, bold text, columns) in its output.
-
-Both paths produce **Markdown text** that preserves the document's semantic structure — headings become `#`/`##`, emphasis becomes `**bold**`, and the reading order follows column layout.
-
-### Stage 2: Headline Extraction (Dual Strategy)
-
-The system uses a two-tier approach:
-
-**Tier 1 — Structural parsing** (`headlineParser.ts`): Since the OCR output is Markdown, headlines naturally appear as `#` headings or `**bold**` standalone lines. A regex parser extracts these with a minimum length threshold (10 chars) to filter out section labels and photo captions. This is fast, deterministic, and free.
-
-**Tier 2 — AI extraction** (fallback): If structural parsing finds fewer than 2 headlines (common with poorly-formatted scans or non-standard layouts), the system sends the OCR text to `sarvam-m` (24B parameter multilingual chat model) with a carefully constrained prompt that returns a JSON array of headline strings. Temperature is set to 0.1 to minimize hallucination.
-
-### Stage 3: Translation
-
-Headlines are translated **progressively** — one at a time with 150ms delays between API calls. Each translated headline triggers a React state update, so the user sees results streaming in rather than waiting for a batch to complete. This is a deliberate UX choice: for a user scanning a newspaper, seeing the first 3 headlines immediately is more valuable than seeing all 15 after a 10-second wait.
-
-**Model selection** is automatic:
-- **mayura:v1** — For the core 11 languages (Hindi, Bengali, Tamil, etc.). Supports 4 translation modes (formal, modern-colloquial, classic-colloquial, code-mixed). 1000 char limit.
-- **sarvam-translate:v1** — For extended languages (Assamese, Bodo, Dogri, Kashmiri, etc.). Formal mode only. 2000 char limit.
-
-### Stage 4: Topic Classification
-
-Headlines are classified into 8 categories: Water, Power, Farmers, Politics, Sports, Economy, Education, Health.
-
-Classification uses **keyword matching against English text** — which means the system needs English translations before it can classify. The pipeline handles three cases:
-
-1. **Source is English** — classify directly on original text
-2. **Target is English** — classify after translation, reusing the translated text
-3. **Neither is English** — perform a separate English translation pass solely for classification, then translate to the actual target language
-
-The keyword classifier (`topicClassifier.ts`) scores each headline against topic-specific word lists. Multi-word matches (e.g., "power cut") score higher than single words. A headline needs at least 1 match point to be classified; unmatched headlines appear as "uncategorized."
-
-### Stage 5: Conversational Q&A
-
-After OCR, the **full extracted text** (not just headlines) is injected into a system prompt for `sarvam-m`. The chat model receives:
-- The complete OCR output (up to 24,000 chars)
-- A topic index summarizing classified headlines
-- Instructions to always respond in the user's target language
-
-This means a user can upload a Kannada newspaper, set the target to Hindi, and ask "What news is important for farmers?" — the model will search through the full Kannada OCR text and respond in Hindi.
+The core technical challenge is building a pipeline that can reliably go from a scanned PDF (often with mixed scripts, complex layouts, and print artifacts) to structured, translated, queryable, voice-accessible content — using AI models that understand Indian languages natively, not as an afterthought.
 
 ---
 
-## Tech Stack
+## How It Works — Full Architecture
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| Frontend | React 19, Tailwind CSS v4 | Component-driven UI with utility-first styling |
-| Backend | Express 5, TypeScript | Thin proxy layer to keep API keys server-side |
-| Dev tooling | Vite 7, tsx watch, concurrently | HMR for frontend, auto-reload for backend |
-| PDF rendering | pdfjs-dist | Client-side PDF-to-image for previews |
-| AI models | Sarvam AI (Vision, Document Intelligence, Translate, Chat) | India-native multilingual models |
+The system uses **every Sarvam AI API** across three layers: ingestion, processing, and interaction. Here is the complete data flow.
 
-### Why Sarvam AI?
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            INPUT LAYER                                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌─────────────┐ ║
+║   │   PDF File   │   │  Image File  │   │  Audio File  │   │  Live Mic   │ ║
+║   │  (≤200 MB)   │   │  JPG/PNG/    │   │  MP3/WAV/    │   │  (browser   │ ║
+║   │  newspaper   │   │  WebP/TIFF   │   │  AAC up to   │   │  MediaRec-  │ ║
+║   │  or document │   │  single page │   │  60 minutes  │   │  order API) │ ║
+║   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘   └──────┬──────┘ ║
+╚══════════╪══════════════════╪══════════════════╪══════════════════╪═════════╝
+           │                  │                  │                  │
+           │                  │                  │          ┌───────┴──────────┐
+           │                  │                  │          │  Voice Mode?     │
+           │                  │                  │          │  REST (≤30s clip)│
+           │                  │                  │          │  or Live Stream? │
+           │                  │                  │          └───┬──────────┬───┘
+           │                  │                  │              │          │
+           ▼                  ▼                  ▼              ▼          ▼
+  ┌─────────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌────────┐
+  │ Sarvam Document │ │ Sarvam Vision│ │ Sarvam STT   │ │ STT REST │ │ STT WS │
+  │  Intelligence   │ │    API       │ │  Batch API   │ │ saaras:  │ │saaras: │
+  │ sarvam-vision   │ │sarvam-vision │ │  saaras:v3   │ │   v3     │ │  v3    │
+  │     3B VLM      │ │   3B VLM     │ │ Async job:   │ │ POST     │ │ WSS    │
+  │                 │ │              │ │ create→upload│ │/speech-  │ │stream  │
+  │ Async job flow: │ │ Sync POST:   │ │ →start→poll→ │ │to-text   │ │PCM 16k │
+  │ create job      │ │ /vision with │ │ download     │ │ 25s      │ │binary  │
+  │ → presigned PUT │ │ prompt_type= │ │ Speaker      │ │timeout   │ │chunks  │
+  │ → /start        │ │ extract_as_  │ │ diarization  │ │ audio/   │ │→JSON   │
+  │ → poll /status  │ │ markdown     │ │ supported    │ │webm blob │ │events  │
+  │ → download ZIP  │ │              │ │              │ │          │ │        │
+  │ → extract .md   │ │              │ │              │ │          │ │        │
+  └────────┬────────┘ └──────┬───────┘ └──────┬───────┘ └────┬─────┘ └───┬────┘
+           │                  │                │              │            │
+           └──────────────────┴────────────────┘              └─────┬──────┘
+                                    │                               │
+                                    ▼                               │
+                        ┌───────────────────────┐                   │
+                        │  Raw Text / Markdown  │                   │
+                        │                       │                   │
+                        │  OCR output preserves │                   │
+                        │  structure: headings  │                   │
+                        │  as #/##, bold as **  │                   │
+                        │  columns in order     │                   │
+                        └────────────┬──────────┘                   │
+                                     │                              │
+                                     ▼                              │
+╔════════════════════════════════════════════════════════════════════╪══════════╗
+║                         PROCESSING PIPELINE                        │          ║
+╠════════════════════════════════════════════════════════════════════╪══════════╣
+║                                                                    │          ║
+║  ┌─────────────────────────────────────────────────────────────┐  │          ║
+║  │  STAGE 1 — Language Auto-Detection                          │  │          ║
+║  │                                                             │  │          ║
+║  │  Sarvam text-lid API  ·  POST /api/detect-language          │  │          ║
+║  │  Sends first 600 chars of OCR text                         │  │          ║
+║  │  Returns: { language_code: "hi-IN", script: "Deva" }       │  │          ║
+║  │  Runs in parallel (fire-and-forget) — never blocks OCR     │  │          ║
+║  │  11 supported languages  ·  falls back gracefully if miss  │  │          ║
+║  └──────────────────────────────────┬──────────────────────────┘  │          ║
+║                                     │  detected source lang        │          ║
+║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
+║  │  STAGE 2 — Headline Extraction  (dual-tier strategy)        │  │          ║
+║  │                                                             │  │          ║
+║  │  Tier 1 — Structural parse  (headlineParser.ts)            │  │          ║
+║  │    Regex over Markdown:  #/##/### headings + **bold** lines │  │          ║
+║  │    Min length 10 chars · deduplicated · zero API cost      │  │          ║
+║  │    Runs synchronously — result in < 1ms                    │  │          ║
+║  │                  ↓ if fewer than 2 headlines found         │  │          ║
+║  │  Tier 2 — AI extraction  (fallback)                        │  │          ║
+║  │    Model: sarvam-30b  (efficient; 105b reserved for Q&A)   │  │          ║
+║  │    Prompt: extract headlines → JSON array                  │  │          ║
+║  │    Temperature 0.1 · max_tokens 2000 · retries on 502/503  │  │          ║
+║  └──────────────────────────────────┬──────────────────────────┘  │          ║
+║                                     │  Headline[]                  │          ║
+║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
+║  │  STAGE 3 — Topic Classification                             │  │          ║
+║  │                                                             │  │          ║
+║  │  Keyword matching on English text  (topicClassifier.ts)    │  │          ║
+║  │  Multi-word phrases score higher than single words         │  │          ║
+║  │  8 topic buckets:                                          │  │          ║
+║  │    💧 Water  ⚡ Power  🌾 Farmers  🏛 Politics              │  │          ║
+║  │    🏏 Sports  📈 Economy  📚 Education  🏥 Health           │  │          ║
+║  │                                                             │  │          ║
+║  │  Classification needs English — three paths:               │  │          ║
+║  │    source=EN → classify directly                           │  │          ║
+║  │    target=EN → classify after translation (reuse)          │  │          ║
+║  │    neither  → extra EN translation pass for classify only  │  │          ║
+║  └──────────────────────────────────┬──────────────────────────┘  │          ║
+║                                     │  classified Headline[]       │          ║
+║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
+║  │  STAGE 4 — Translation                                      │  │          ║
+║  │                                                             │  │          ║
+║  │  Model auto-selected by target language:                   │  │          ║
+║  │    mayura:v1          — core 11 langs · 4 modes · 1k chars │  │          ║
+║  │    sarvam-translate:v1 — all 22 langs · formal · 2k chars  │  │          ║
+║  │                                                             │  │          ║
+║  │  Batched in groups of 4 concurrent requests               │  │          ║
+║  │  Each resolved promise triggers immediate React state update│  │          ║
+║  │  → user sees headlines stream in, not batch-at-end        │  │          ║
+║  │  AbortController 10s timeout per call · 2 retries          │  │          ║
+║  └──────────────────────────────────┬──────────────────────────┘  │          ║
+║                                     │  translated Headline[]       │          ║
+║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
+║  │  STAGE 5 — Chat Context Assembly                            │  │          ║
+║  │                                                             │  │          ║
+║  │  Full OCR text (capped at 10,000 chars) injected into      │  │          ║
+║  │  sarvam-105b system prompt alongside:                       │  │          ║
+║  │    • Topic index: each bucket + its headline list          │  │          ║
+║  │    • Language instruction: always respond in {targetLang}  │  │          ║
+║  │    • Last 10 turns of conversation history                 │  │          ║
+║  │  Base64 image blocks stripped from OCR before injection    │  │          ║
+║  └─────────────────────────────────────────────────────────────┘  │          ║
+║                                                                    │          ║
+╚════════════════════════════════════════════════════════════════════╪══════════╝
+                                     │                              │
+                                     ▼                              ▼
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          OUTPUT / INTERACTION LAYER                          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────────────┐ ║
+║  │  HEADLINES TAB  │  │   TOPICS TAB     │  │        CHAT TAB            │ ║
+║  │                 │  │                  │  │                            │ ║
+║  │  Translated     │  │  8 topic cards   │  │  Q&A over full OCR text    │ ║
+║  │  headlines with │  │  with grouped    │  │  Model: sarvam-105b        │ ║
+║  │  topic badges   │  │  headline counts │  │  128k context window       │ ║
+║  │                 │  │  and summaries   │  │  Responds in target lang   │ ║
+║  │ ┌─────────────┐ │  └──────────────────┘  │                            │ ║
+║  │ │ 🔊 Speaker  │ │                        │  Voice input:              │ ║
+║  │ │  button     │ │  ┌──────────────────┐  │  ┌──────────────────────┐  │ ║
+║  │ │             │ │  │  DOWNLOAD TAB    │  │  │ [🎤 Mic] REST STT    │  │ ║
+║  │ │ Sarvam TTS  │ │  │                  │  │  │  record → transcribe  │  │ ║
+║  │ │ bulbul:v3   │ │  │  Translated PDF  │  │  │  → fills input box   │  │ ║
+║  │ │ 11 langs    │ │  │  download via    │  │  └──────────────────────┘  │ ║
+║  │ │ en-IN fbk   │ │  │  Sarvam Doc      │  │  ┌──────────────────────┐  │ ║
+║  │ │ 15s timeout │ │  │  Translate API   │  │  │ [⚡ Live] WS Stream  │  │ ║
+║  │ └─────────────┘ │  │  /parse/         │  │  │  PCM 16kHz → saaras  │  │ ║
+║  │                 │  │  translatepdf    │  │  │  → live transcript   │  │ ║
+║  │ ┌─────────────┐ │  │  120s timeout    │  │  │  panel overlay       │  │ ║
+║  │ │ Aa/अ Toggle │ │  │  streams PDF     │  │  └──────────────────────┘  │ ║
+║  │ │             │ │  │  directly to     │  │                            │ ║
+║  │ │ Transliterate│ │  │  browser         │  │  Each assistant response:  │ ║
+║  │ │ API          │ │  └──────────────────┘  │  ┌──────────────────────┐  │ ║
+║  │ │ native→Roman │ │                        │  │ 🔊 Speaker button    │  │ ║
+║  │ │ in-memory    │ │                        │  │  bulbul:v3 TTS       │  │ ║
+║  │ │ cache        │ │                        │  │  auto-speak toggle   │  │ ║
+║  │ └─────────────┘ │                        │  └──────────────────────┘  │ ║
+║  └─────────────────┘                        └────────────────────────────┘ ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
 
-Most multilingual AI models treat Indian languages as secondary — trained primarily on English with Indian languages as fine-tuning. Sarvam's models are **India-first**: the `sarvam-m` 24B model and `sarvam-vision` 3B VLM are trained with Indian languages as primary targets. This matters for newspaper OCR where script rendering, conjunct characters (like Kannada ottaksharas or Hindi half-letters), and code-mixed text (English words in Devanagari) are the norm, not edge cases.
+---
+
+## All Sarvam AI APIs Used
+
+| API | Endpoint | Model | Used For |
+|-----|----------|-------|----------|
+| Document Intelligence | `POST /doc-digitization/job/v1` | sarvam-vision 3B VLM | Async PDF OCR — async job, ZIP output |
+| Vision | `POST /vision` | sarvam-vision 3B VLM | Single-image OCR, `extract_as_markdown` |
+| Language Identification | `POST /text-lid` | — | Auto-detect source language from OCR text |
+| Chat Completions | `POST /v1/chat/completions` | sarvam-30b | Headline extraction fallback (fast, cheap) |
+| Chat Completions | `POST /v1/chat/completions` | sarvam-105b | Conversational Q&A over newspaper content |
+| Translate | `POST /translate` | mayura:v1 | Translation for 11 core Indian languages |
+| Translate | `POST /translate` | sarvam-translate:v1 | Translation for all 22 Indian languages |
+| Transliterate | `POST /transliterate` | — | Native script → Roman toggle on headlines |
+| Text-to-Speech | `POST /text-to-speech` | bulbul:v3 | Read headlines and chat responses aloud |
+| Speech-to-Text (REST) | `POST /speech-to-text` | saaras:v3 | Mic button → transcript in chat input |
+| Speech-to-Text (WebSocket) | `WSS /speech-to-text/ws` | saaras:v3 | Live streaming transcription panel |
+| Speech-to-Text (Batch) | `POST /speech-to-text/job/v1` | saaras:v3 | Long audio upload (podcasts, radio, up to 60 min) |
+| Doc Translate | `POST /parse/translatepdf` | — | Download full translated PDF of the newspaper |
 
 ---
 
 ## Project Structure
 
 ```
-samachar-scan/
+newspaper-ocr/
+│
 ├── server/
-│   ├── index.ts                 # Express server — all API routes
+│   ├── index.ts                     # Express server — existing core routes
+│   ├── routes/                      # New Sarvam API route modules
+│   │   ├── languageDetect.ts        # POST /api/detect-language   (text-lid)
+│   │   ├── transliterate.ts         # POST /api/transliterate-text
+│   │   ├── tts.ts                   # POST /api/tts               (bulbul:v3)
+│   │   ├── stt.ts                   # POST /api/stt               (saaras:v3 REST)
+│   │   ├── sttStream.ts             # WS   /ws/stt                (saaras:v3 stream proxy)
+│   │   ├── sttBatch.ts              # POST /api/stt-batch[-status](saaras:v3 batch)
+│   │   └── docTranslate.ts          # POST /api/doc-translate     (translatepdf)
 │   └── services/
-│       └── topicClassifier.ts   # Keyword-based headline topic classification
+│       ├── topicClassifier.ts       # Keyword-based 8-topic classification
+│       └── ranker.ts                # Headline importance scoring
+│
 ├── src/
-│   ├── App.tsx                  # Main orchestrator — the full processing pipeline
+│   ├── App.tsx                      # Pipeline orchestrator — all 6 processing stages
 │   ├── components/
-│   │   ├── ChatInterface.tsx    # Conversational Q&A with newspaper context
-│   │   ├── TopicCards.tsx       # Topic-grouped headline summary cards
-│   │   ├── HeadlineList.tsx     # Translated headline list with originals toggle
-│   │   ├── HeadlineCard.tsx     # Individual headline with badges and copy
-│   │   ├── FileUpload.tsx       # Drag-and-drop PDF/image upload
-│   │   ├── LanguageSelector.tsx # Source (auto-detect) + target language pickers
-│   │   ├── ProgressSteps.tsx    # 5-stage visual pipeline progress
-│   │   ├── ImagePreview.tsx     # PDF page preview thumbnails
-│   │   ├── DarkModeToggle.tsx   # Light/dark theme with localStorage
-│   │   └── SuccessAnimation.tsx # Completion celebration animation
+│   │   ├── ChatInterface.tsx        # Q&A chat, mic button, live voice panel trigger, TTS
+│   │   ├── LiveVoicePanel.tsx       # Floating streaming STT overlay
+│   │   ├── HeadlineCard.tsx         # Headline + TTS button + Aa/अ transliteration toggle
+│   │   ├── HeadlineList.tsx         # Headline list + topic filter chips + PDF download
+│   │   ├── FileUpload.tsx           # Drag-and-drop: PDF / Image / Audio (MP3, WAV)
+│   │   ├── LanguageSelector.tsx     # Source (auto-detect + badge) + target pickers
+│   │   ├── TopicCards.tsx           # 8 topic cards with grouped headline summaries
+│   │   ├── ProgressSteps.tsx        # 6-stage visual pipeline progress bar
+│   │   ├── ImagePreview.tsx         # PDF page thumbnails
+│   │   ├── DarkModeToggle.tsx       # Light / dark theme
+│   │   └── SuccessAnimation.tsx     # Completion animation
+│   ├── hooks/                       # React hooks — one per new Sarvam API
+│   │   ├── useLanguageDetect.ts     # Fires LID in parallel, never blocks pipeline
+│   │   ├── useTransliterate.ts      # In-memory cache, 8s timeout, graceful passthrough
+│   │   ├── useTTS.ts                # Blob URL playback, toggle-to-stop, speakingId state
+│   │   ├── useTTSChat.ts            # Chat TTS with auto-speak toggle
+│   │   ├── useSTT.ts                # MediaRecorder → REST transcription
+│   │   ├── useSTTStream.ts          # AudioContext PCM → WebSocket proxy → live transcript
+│   │   └── useDocTranslate.ts       # PDF translation with progress updates
 │   ├── services/
-│   │   ├── api.ts               # Frontend API client (all Sarvam endpoints)
-│   │   ├── headlineParser.ts    # Markdown → headline extraction (regex)
-│   │   └── pdfToImages.ts       # PDF → image blobs via pdfjs-dist
-│   ├── lib/
-│   │   ├── types.ts             # TypeScript interfaces (Headline, ChatMessage, etc.)
-│   │   ├── languages.ts         # All 22 languages with native names + scripts
-│   │   └── topics.ts            # Topic metadata, grouping, and summary builders
-│   └── index.css                # Tailwind v4 theme — Indian color palette + dark mode
-└── vite.config.ts               # Vite + Tailwind plugin + API proxy to Express
+│   │   ├── api.ts                   # Frontend API client — all core endpoints
+│   │   ├── audioApi.ts              # Batch STT upload + polling (same pattern as PDF OCR)
+│   │   ├── headlineParser.ts        # Regex Markdown → headlines (Tier 1)
+│   │   └── pdfToImages.ts           # PDF → image blobs via pdfjs-dist (preview only)
+│   └── lib/
+│       ├── types.ts                 # TypeScript interfaces
+│       ├── languages.ts             # 23 languages with native names + scripts
+│       └── topics.ts                # Topic metadata, grouping, summary builders
+│
+├── tests/
+│   ├── unit.test.ts                 # headlineParser + topicClassifier (pure logic)
+│   └── server.test.ts               # All 12 API route groups, 80 tests, fetch mocked
+│
+└── vite.config.ts                   # Vite + Tailwind + proxy (/api → :3001, /ws → :3001)
 ```
+
+---
+
+## Performance Design
+
+Every Sarvam API call in this app follows the same contract: **the UI is never blocked waiting for a network response**.
+
+| Technique | Where used |
+|-----------|-----------|
+| Fire-and-forget parallel call | Language ID runs alongside OCR, not after it |
+| Progressive state updates | Each translated headline pushed to UI as soon as its Promise resolves |
+| Batch concurrency (4 at a time) | Headline translation — 4 parallel requests, not sequential |
+| Optimistic UI state | TTS `speakingId` set before fetch starts — button reacts instantly |
+| Blob URL audio playback | TTS audio decoded in memory, no disk write, URL revoked after `ended` |
+| In-memory cache | Transliteration results cached per `${lang}:${text}` — no repeat API calls |
+| AbortController timeouts | Every API call: LID 10s, Transliterate 8s, TTS 15s, STT 25s, Doc Translate 120s |
+| Never-500 contract | All new routes return HTTP 200 with `{ error }` in body — client never crashes |
+| Retry on transient errors | 2 retries with backoff on 502/503/504 for every Sarvam API call |
+| Streaming WebSocket audio | STT streaming sends 256ms PCM chunks (4096 samples at 16kHz) — low latency |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, Tailwind CSS v4 |
+| Backend | Express 5, TypeScript |
+| Dev tooling | Vite 7, tsx watch, concurrently |
+| PDF rendering | pdfjs-dist (client-side, preview only) |
+| WebSocket | ws (server-side proxy for streaming STT) |
+| AI models | All Sarvam AI APIs (see table above) |
+| Tests | Vitest + Supertest — 80 tests, fetch fully mocked |
+| Deployment | Vercel (serverless `/api` routes + static frontend) |
 
 ---
 
@@ -185,6 +307,8 @@ All 22 languages in the Eighth Schedule of the Indian Constitution, plus English
 | English | Latin | `en-IN` | Manipuri | মণিপুরী | `mni-IN` |
 | | | | Santali | ᱥᱟᱱᱛᱟᱲᱤ | `sat-IN` |
 
+> **TTS and Transliteration** support 11 of the above languages. Unsupported languages fall back to English for TTS, and pass text through unchanged for transliteration.
+
 ---
 
 ## Getting Started
@@ -192,19 +316,20 @@ All 22 languages in the Eighth Schedule of the Indian Constitution, plus English
 ### Prerequisites
 
 - Node.js 18+
-- A [Sarvam AI](https://dashboard.sarvam.ai) API key
+- A [Sarvam AI](https://dashboard.sarvam.ai) API key (free credits on signup)
 
 ### Setup
 
 ```bash
-git clone <repo-url> && cd samachar-scan
+git clone https://github.com/03shraddha/newspaper-ocr-sarvam
+cd newspaper-ocr-sarvam
 npm install
 ```
 
 Create a `.env` file in the project root:
 
 ```env
-SARVAM_API_KEY=your_api_key_here
+SARVAM_API_KEY=your_key_here
 DEMO_MODE=false
 PORT=3001
 ```
@@ -214,141 +339,25 @@ PORT=3001
 ```bash
 npm run dev          # Starts Vite (port 5173) + Express (port 3001) concurrently
 npm run dev:client   # Frontend only
-npm run dev:server   # Backend only
-npm run build        # Production build
+npm run dev:server   # Backend only (tsx watch, auto-reload)
+npm run build        # TypeScript compile + Vite production build
+npm run test         # 80 unit + server tests (no network, fetch fully mocked)
 ```
 
 ### Demo Mode
 
-Set `DEMO_MODE=true` in `.env` to use mock responses without hitting Sarvam APIs. Useful for UI development and testing.
-
----
-
-## API Routes
-
-| Method | Route | Purpose | Sarvam Model |
-|--------|-------|---------|-------------|
-| `POST` | `/api/vision` | Single image OCR | sarvam-vision (Vision API) |
-| `POST` | `/api/doc-intelligence` | Full PDF OCR | sarvam-vision (Document Intelligence) |
-| `POST` | `/api/translate` | Text translation | mayura:v1 / sarvam-translate:v1 |
-| `POST` | `/api/extract-headlines` | AI headline extraction | sarvam-m (Chat API) |
-| `POST` | `/api/classify-topics` | Keyword topic classification | N/A (local) |
-| `POST` | `/api/chat` | Conversational Q&A | sarvam-m (Chat API) |
+Set `DEMO_MODE=true` in `.env` to use mock responses without hitting any Sarvam API. Useful for frontend iteration without spending API credits.
 
 ---
 
 ## Design
 
-The visual identity draws from Indian print culture: terracotta and sandalwood tones, typewriter fonts (Special Elite, Courier Prime) for headings, and ornamental dividers that echo traditional newspaper layouts. A tricolor gradient (saffron-gold-indigo) runs along the header. Dark mode shifts to warm charcoal tones rather than pure black.
+The visual identity draws from Indian print culture: terracotta and sandalwood tones, typewriter fonts (Special Elite, Courier Prime) for headings, and ornamental dividers that echo traditional newspaper layouts. A tricolor gradient (saffron → gold → indigo) runs along the header border. Dark mode shifts to warm charcoal tones rather than pure black.
 
-All 13 Indic scripts render correctly through system fonts and a dedicated `.font-indic` class that targets Calibri/Segoe UI — fonts with broad Unicode coverage for Indian scripts on Windows.
+All 13 Indic scripts render correctly through system fonts and a dedicated `.font-indic` class targeting fonts with broad Unicode coverage for Indian scripts.
 
 ---
 
 ## License
 
 MIT
-
----
-
-## Interview Reference
-
-### Overview
-
-"Chat with a Regional Newspaper" is a five-stage AI pipeline that turns any Indian regional newspaper (PDF or image) into a searchable, translatable, conversational document.
-
-**What a user does:**
-- Upload a newspaper scan in any of India's 22 official languages
-- The pipeline runs automatically: OCR → headline extraction → translation → topic classification → Q&A ready
-- Ask questions in natural language; the model searches the full extracted text and responds in your chosen language
-
-**AI models used and why:**
-
-| Stage | Sarvam Model | Role |
-|-------|-------------|------|
-| OCR (PDF) | Document Intelligence (sarvam-vision 3B VLM) | Async job-based; handles complex Indic scripts and mixed layouts natively |
-| OCR (image) | Vision API | Single-image extraction via `extract_as_markdown` prompt type |
-| Headline fallback | `sarvam-m` (24B chat) | AI extraction when regex finds fewer than 2 headlines |
-| Translation | `mayura:v1` / `sarvam-translate:v1` | `mayura` for core 11 languages; `sarvam-translate` for extended languages |
-| Q&A | `sarvam-m` (24B chat) | Full OCR text in system prompt; responds in target language |
-
-The backend (Express + TypeScript) is a thin proxy — it exists only to keep API keys server-side. The frontend streams UI updates per stage so users see progress rather than a blank screen.
-
----
-
-### Narrative
-
-**How the framing evolved**
-- Launched as **Samachar Scan** — a document scanning tool
-- The final rename to "Chat with a Regional Newspaper" happened after the pipeline was complete
-- The Q&A layer turned out to be the product's core insight, not the OCR — but that only became clear after building the scanning part first
-
-**Bug 1: Azure presigned URL upload failure**
-- Sarvam's Document Intelligence API returns a presigned Azure Blob URL for PDF uploads
-- Azure Blob Storage requires the header `x-ms-blob-type: BlockBlob` on every PUT request — Sarvam doesn't add it automatically
-- Not surfaced during local dev (mock responses bypass the actual upload)
-- In production: every PDF upload failed silently until this one header was added
-
-**Bug 2: Base64 image bloat in the chat context**
-- Sarvam's Document Intelligence output is Markdown that includes base64-encoded images inline
-- Passing this directly to `sarvam-m` as context inflated the token count by an order of magnitude
-- Images add zero semantic value for Q&A — they just eat token budget
-- Fix: strip all base64 image blocks from the OCR output before it enters the chat system prompt
-
-**The serverless timeout problem**
-- The pipeline was originally built as a single sequential server-side request: upload → OCR → extract → translate → classify
-- Serverless function timeout limits (typically 10–30 seconds) made this impossible — Document Intelligence alone takes 15–60 seconds for a newspaper page
-- Fix: split document intelligence into two endpoints
-  - Endpoint 1: initiate the OCR job and return a job ID
-  - Endpoint 2: poll for completion and retrieve the result
-  - The client now orchestrates the waiting loop, not the server
-
-**The token limit tradeoff**
-- `sarvam-m` has a token budget that couldn't fit a full newspaper page
-- Explicit decision: cap the OCR text passed to the chat model at **10,000 characters**
-- This is a real limitation: a densely printed newspaper page may have 50+ articles, and the bottom half may not be reachable by Q&A
-- The cap is hardcoded — users have no way to configure or increase it
-
-**Headline extraction: hybrid approach**
-- Tier 1: parse the OCR Markdown structurally — `#` headings and `**bold**` standalone lines become headlines (regex, zero API cost)
-- Tier 2: if fewer than 2 headlines are found, send the raw OCR text to `sarvam-m` and ask it to extract headlines as a JSON array (temperature 0.1 to minimize hallucination)
-- The tiered approach avoids paying LLM costs for well-formatted scans while handling poor-quality ones gracefully
-
-**Progressive translation**
-- Headlines are translated one at a time with 150ms delays between API calls
-- Each translated headline triggers an immediate React state update — the user sees results arriving as a stream
-- Decision: "first 3 headlines now" is more useful than "all 15 headlines after 10 seconds"
-
----
-
-### Technical Reflection
-
-**Constraints**
-
-| Constraint | What it means in practice |
-|-----------|--------------------------|
-| `sarvam-m` token limit → 10k char cap | Bottom portion of large newspapers is invisible to Q&A |
-| Document Intelligence latency (15–60s) | Slowest stage; timeout increases required in early dev and still the main bottleneck |
-| Serverless function timeout limits | Forced the pipeline to split into two endpoints; client now owns the polling loop |
-| Keyword classifier uses English word lists only | Headlines must be translated to English before classification — adds an extra translation pass for non-English source + non-English target |
-
-**How key problems were resolved**
-
-| Problem | Solution |
-|---------|---------|
-| Azure upload failing in production | Add `x-ms-blob-type: BlockBlob` header to every PUT request |
-| Base64 images bloating chat token count | Strip all base64 blocks from OCR output before passing to `sarvam-m` |
-| Single-request pipeline timing out on serverless | Split into job-initiate + job-poll endpoints; client orchestrates the wait |
-| LLM cost on well-formatted scans | Structural regex parse first; AI fallback only when regex finds fewer than 2 headlines |
-| Perceived latency on translation | Translate one headline at a time, push each result to UI immediately |
-
-**What breaks at scale**
-- **Topic classification**: keyword matching against static English word lists fails on hyperlocal stories, vernacular idioms, and code-mixed text — "uncategorized" becomes the default for regional and rural publications
-- **Sequential pipeline**: one Sarvam API timeout stalls the entire session with no partial result caching between stages
-- **Context window**: the 10k character cap is a hard ceiling with no chunking or retrieval strategy — RAG over the OCR output would be the right architectural move at scale
-- **Keyword classifier coverage**: 8 hardcoded topic categories won't generalize to specialized publications (business papers, sports tabloids, agricultural weeklies)
-
-**Maintenance risks**
-- Three independent Sarvam API surfaces (Document Intelligence, Translation, Chat) each have their own versioning — a format change in any one silently breaks the downstream stage
-- `mayura:v1` vs `sarvam-translate:v1` selection is hardcoded by language code in the route handler; adding a new language requires finding and updating this mapping
-- The directory layout in this README still uses `samachar-scan/` (the old project name) — the rename was applied to external surfaces but not fully propagated internally
