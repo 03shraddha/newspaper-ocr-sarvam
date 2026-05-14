@@ -6,11 +6,11 @@ interface ProgressStepsProps {
 }
 
 const STEPS = [
-  { key: 'converting', label: 'Upload', icon: '1' },
-  { key: 'ocr', label: 'OCR', icon: '2' },
-  { key: 'parsing', label: 'Parse', icon: '3' },
-  { key: 'classifying', label: 'Topics', icon: '4' },
-  { key: 'translating', label: 'Translate', icon: '5' },
+  { key: 'converting', label: 'Upload', model: null },
+  { key: 'ocr', label: 'OCR', model: 'sarvam-vision 3B' },
+  { key: 'parsing', label: 'Headlines', model: 'sarvam-30b' },
+  { key: 'classifying', label: 'Topics', model: 'keyword match' },
+  { key: 'translating', label: 'Translate', model: 'mayura:v1' },
 ] as const;
 
 const stageOrder: Record<string, number> = {
@@ -53,7 +53,7 @@ export default function ProgressSteps({ stage, statusText }: ProgressStepsProps)
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
-                    step.icon
+                    String(i + 1)
                   )}
                 </div>
                 <span className={`text-[10px] font-medium mt-1 ${
@@ -61,6 +61,15 @@ export default function ProgressSteps({ stage, statusText }: ProgressStepsProps)
                 }`}>
                   {step.label}
                 </span>
+                {step.model && (isCurrent || isComplete) && (
+                  <span className={`text-[8px] font-mono px-1 rounded mt-0.5 leading-tight ${
+                    isCurrent
+                      ? 'bg-primary-light/70 text-primary'
+                      : 'bg-secondary/10 text-secondary'
+                  }`}>
+                    {step.model}
+                  </span>
+                )}
               </div>
               {i < STEPS.length - 1 && (
                 <div className="flex-1 h-0.5 mx-2 mb-4 rounded-full overflow-hidden bg-border">

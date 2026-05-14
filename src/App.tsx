@@ -63,13 +63,13 @@ function App() {
       if (file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name)) {
         // ── Audio: Use STT Batch API for radio/podcast transcription ──
         setProcessingStage('ocr');
-        setStatus('Uploading audio for transcription...');
+        setStatus('Transcribing audio via saaras:v3...');
         const result = await uploadAudio(file, sourceLang, setStatus);
         allMarkdown = result.content;
       } else if (isPdf(file)) {
         // ── PDF: Use Document Intelligence API for full-document OCR ──
         setProcessingStage('ocr');
-        setStatus('Uploading PDF...');
+        setStatus('Reading document via Doc Intelligence (sarvam-vision 3B)...');
         const result = await ocrPdf(file, sourceLang, setStatus);
         allMarkdown = result.content;
 
@@ -87,7 +87,7 @@ function App() {
         setImageUrls([url]);
 
         setProcessingStage('ocr');
-        setStatus('Extracting text from image...');
+        setStatus('Running OCR via sarvam-vision 3B...');
         const result = await ocrImage(file, sourceLang);
         allMarkdown = result.content;
       }
@@ -105,7 +105,7 @@ function App() {
       setOcrFullText(allMarkdown);
 
       setProcessingStage('parsing');
-      setStatus('Analyzing content & extracting headlines...');
+      setStatus('Extracting headlines from OCR text...');
 
       let headlineTexts: string[] = [];
       let headlineSource: 'markdown' | 'ai' = 'markdown';
@@ -124,7 +124,7 @@ function App() {
       }
 
       if (headlineTexts.length < 2) {
-        setStatus('Using AI to identify headlines...');
+        setStatus('Extracting headlines via sarvam-30b...');
         headlineTexts = await extractHeadlinesViaAI(allMarkdown);
         headlineSource = 'ai';
       }
@@ -142,7 +142,7 @@ function App() {
 
       // ── Classify topics (needs English text) ──
       setProcessingStage('classifying');
-      setStatus('Classifying topics...');
+      setStatus('Classifying topics by keyword...');
 
       if (sourceLang === 'en-IN') {
         // Source is English — classify directly
@@ -150,7 +150,7 @@ function App() {
       } else if (targetLang !== 'en-IN') {
         // Need a separate English translation pass for classification
         for (let i = 0; i < headlineObjects.length; i++) {
-          setStatus(`Classifying topics (${i + 1}/${headlineObjects.length})...`);
+          setStatus(`Translating for classification (${i + 1}/${headlineObjects.length})...`);
           try {
             const result = await translateText(headlineObjects[i].original, sourceLang, 'en-IN');
             headlineObjects[i].englishText = result.translated_text;
@@ -181,18 +181,18 @@ function App() {
       setResultsTab('chat');
 
       setProcessingStage('translating');
-      setStatus('Translating headlines...');
+      setStatus('Translating via mayura:v1...');
       await translateHeadlines(headlineObjects, sourceLang, targetLang, (index, translated) => {
         headlineObjects[index].translated = translated;
         setHeadlines((prev) =>
           prev.map((h, i) => (i === index ? { ...h, translated, isTranslating: false } : h))
         );
-        setStatus(`Translating ${index + 1}/${headlineTexts.length}...`);
+        setStatus(`Translating headline ${index + 1} of ${headlineTexts.length} via mayura:v1...`);
       });
 
       // If target was English, classify now using the translated text
       if (targetLang === 'en-IN' && sourceLang !== 'en-IN') {
-        setStatus('Classifying topics...');
+        setStatus('Classifying topics by keyword...');
         try {
           const classInput = headlineObjects.map((h) => ({
             id: h.id,
