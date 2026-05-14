@@ -21,14 +21,30 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
     }
   }, [currentFile]);
 
+  const isAudioFile = (f: File) =>
+    f.type.startsWith('audio/') ||
+    /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(f.name);
+
   const handleFile = useCallback((file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File must be under 10MB');
+    const audio = isAudioFile(file);
+    const maxSize = audio ? 200 * 1024 * 1024 : 10 * 1024 * 1024;
+    const maxLabel = audio ? '200MB' : '10MB';
+
+    if (file.size > maxSize) {
+      alert(`File must be under ${maxLabel}`);
       return;
     }
+
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/tiff', 'application/pdf'];
-    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
-      alert('Please upload an image (JPG, PNG, WebP, TIFF) or PDF');
+    const audioTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac'];
+    const allValid = [...validTypes, ...audioTypes];
+
+    if (
+      !allValid.includes(file.type) &&
+      !file.name.toLowerCase().endsWith('.pdf') &&
+      !isAudioFile(file)
+    ) {
+      alert('Please upload an image (JPG, PNG, WebP, TIFF), PDF, or audio file (MP3, WAV, OGG, M4A, AAC, FLAC)');
       return;
     }
     onFileSelect(file);
@@ -59,7 +75,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,.pdf"
+        accept="image/*,.pdf,audio/mpeg,audio/wav,.mp3,.wav,.ogg,.m4a,.aac,.flac"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
         className="hidden"
         disabled={disabled}
@@ -73,7 +89,16 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
               <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
             </div>
           )}
-          {!previewUrl && (
+          {/* Audio file icon */}
+          {!previewUrl && currentFile && isAudioFile(currentFile) && (
+            <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
+              <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            </div>
+          )}
+          {/* PDF / generic file icon */}
+          {!previewUrl && (!currentFile || !isAudioFile(currentFile)) && (
             <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
               <svg className="w-6 h-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -111,7 +136,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
           </div>
           <div>
             <p className="font-heading text-lg font-semibold text-text-primary">Drop a newspaper scan here</p>
-            <p className="text-sm text-text-muted mt-1 italic">JPG, PNG, or PDF &middot; Max 10MB</p>
+            <p className="text-sm text-text-muted mt-1 italic">JPG, PNG, PDF, or Audio (MP3, WAV) &middot; Images/PDFs max 10MB, Audio max 200MB</p>
           </div>
         </div>
       )}

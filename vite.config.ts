@@ -18,6 +18,11 @@ export default defineConfig({
         changeOrigin: true,
         timeout: 300_000,        // 5 min — PDF uploads + Doc Intelligence polling
       },
+      '/ws': {
+        target: 'ws://localhost:3001',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 })

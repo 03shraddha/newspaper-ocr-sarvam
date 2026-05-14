@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useLanguageDetect } from './hooks/useLanguageDetect';
 import type { Headline, AppStep, ProcessingStage } from './lib/types';
 import { LANGUAGES } from './lib/languages';
 import { ocrImage, ocrPdf, extractHeadlinesViaAI, translateHeadlines, translateText, classifyHeadlineTopics } from './services/api';
+import { uploadAudio } from './services/audioApi';
 import { extractHeadlines } from './services/headlineParser';
 import { pdfToImages, isPdf } from './services/pdfToImages';
 import { buildTopicSummaries, getTopicsFound } from './lib/topics';
@@ -16,6 +18,8 @@ import ChatInterface from './components/ChatInterface';
 import TopicCards from './components/TopicCards';
 
 function App() {
+  const { detectLanguage } = useLanguageDetect();
+
   const [step, setStep] = useState<AppStep>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [headlines, setHeadlines] = useState<Headline[]>([]);
@@ -27,6 +31,7 @@ function App() {
   const [processingStage, setProcessingStage] = useState<ProcessingStage>('idle');
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [detectedLang, setDetectedLang] = useState<string | null>(null);
 
   // Chat state — stores the full OCR text for the AI to reason over
   const [ocrFullText, setOcrFullText] = useState('');
@@ -55,7 +60,13 @@ function App() {
     try {
       let allMarkdown: string;
 
-      if (isPdf(file)) {
+      if (file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name)) {
+        // ── Audio: Use STT Batch API for radio/podcast transcription ──
+        setProcessingStage('ocr');
+        setStatus('Uploading audio for transcription...');
+        const result = await uploadAudio(file, sourceLang, setStatus);
+        allMarkdown = result.content;
+      } else if (isPdf(file)) {
         // ── PDF: Use Document Intelligence API for full-document OCR ──
         setProcessingStage('ocr');
         setStatus('Uploading PDF...');
@@ -82,6 +93,13 @@ function App() {
       }
 
       if (!allMarkdown.trim()) throw new Error('No text extracted. Try a clearer image.');
+
+      // Auto-detect language in parallel with processing (non-blocking)
+      if (sourceLang === 'auto') {
+        detectLanguage(allMarkdown.slice(0, 600)).then((code) => {
+          if (code) { setDetectedLang(code); setSourceLang(code); }
+        });
+      }
 
       // Store full OCR text for chat context
       setOcrFullText(allMarkdown);
@@ -217,6 +235,8 @@ function App() {
     setShowSuccess(false);
     setOcrFullText('');
     setResultsTab('chat');
+    setDetectedLang(null);
+    setSourceLang('auto');
   };
 
   const targetLangName = LANGUAGES.find((l) => l.code === targetLang)?.name || targetLang;
@@ -273,6 +293,7 @@ function App() {
               onSourceChange={setSourceLang}
               onTargetChange={setTargetLang}
               disabled={isProcessing}
+              detectedLang={detectedLang}
             />
 
             <button
@@ -408,6 +429,9 @@ function App() {
                   headlines={headlines}
                   showOriginals={showOriginals}
                   onToggleOriginals={() => setShowOriginals((v) => !v)}
+                  sourceLang={sourceLang}
+                  targetLang={targetLang}
+                  file={file}
                 />
               </div>
             )}

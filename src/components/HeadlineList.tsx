@@ -2,16 +2,21 @@ import { useState, useMemo } from 'react';
 import type { Headline, TopicKey } from '../lib/types';
 import { TOPIC_META } from '../lib/topics';
 import HeadlineCard from './HeadlineCard';
+import { useDocTranslate } from '../hooks/useDocTranslate';
 
 interface HeadlineListProps {
   headlines: Headline[];
   showOriginals: boolean;
   onToggleOriginals: () => void;
+  sourceLang?: string;
+  targetLang?: string;
+  file?: File | null;
 }
 
-export default function HeadlineList({ headlines, showOriginals, onToggleOriginals }: HeadlineListProps) {
+export default function HeadlineList({ headlines, showOriginals, onToggleOriginals, sourceLang, targetLang, file }: HeadlineListProps) {
   const [copiedAll, setCopiedAll] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const { isTranslating, error: translateError, progress, translateAndDownload } = useDocTranslate();
 
   const topicCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -103,6 +108,33 @@ export default function HeadlineList({ headlines, showOriginals, onToggleOrigina
             </button>
           )}
 
+          {/* Doc Translate — only show if a PDF file is available */}
+          {file && file.name?.toLowerCase().endsWith('.pdf') && allDone && (
+            <button
+              onClick={() => translateAndDownload(file, sourceLang || 'hi-IN', targetLang || 'en-IN')}
+              disabled={isTranslating}
+              className="flex items-center gap-1 text-xs font-medium text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+              title="Download full newspaper translated to target language"
+            >
+              {isTranslating ? (
+                <>
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  Translating PDF...
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/>
+                  </svg>
+                  Translated PDF
+                </>
+              )}
+            </button>
+          )}
+
           {/* Toggle originals */}
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <span className="text-xs text-text-secondary">Show originals</span>
@@ -119,6 +151,14 @@ export default function HeadlineList({ headlines, showOriginals, onToggleOrigina
           </label>
         </div>
       </div>
+
+      {/* Doc translate progress / error */}
+      {progress && (
+        <p className="text-xs text-text-muted italic animate-pulse">{progress}</p>
+      )}
+      {translateError && (
+        <p className="text-xs text-error">{translateError}</p>
+      )}
 
       {/* Topic filter chips */}
       {topicCounts.size > 0 && (
@@ -152,7 +192,7 @@ export default function HeadlineList({ headlines, showOriginals, onToggleOrigina
       {/* Headline cards */}
       <div className="space-y-3">
         {filteredHeadlines.map((h, i) => (
-          <HeadlineCard key={h.id} headline={h} index={i} showOriginal={showOriginals} />
+          <HeadlineCard key={h.id} headline={h} index={i} showOriginal={showOriginals} sourceLang={sourceLang} targetLang={targetLang} />
         ))}
       </div>
     </div>

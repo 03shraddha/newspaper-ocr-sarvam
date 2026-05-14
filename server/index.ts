@@ -5,6 +5,13 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
+import { transliterateRouter } from './routes/transliterate.js';
+import { languageDetectRouter } from './routes/languageDetect.js';
+import { attachSTTStreamServer } from './routes/sttStream.js';
+import { docTranslateRouter } from './routes/docTranslate.js';
+import { sttBatchRouter } from './routes/sttBatch.js';
+import { ttsRouter } from './routes/tts.js';
+import { sttRouter } from './routes/stt.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -14,7 +21,7 @@ const PORT = process.env.PORT || 3001;
 const API_KEY = process.env.SARVAM_API_KEY || '';
 
 app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'] }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -313,7 +320,8 @@ app.post('/api/extract-headlines', async (req: express.Request, res: express.Res
     if (!ocrText) { res.status(400).json({ error: 'Missing ocrText' }); return; }
 
     const payload = {
-      model: 'sarvam-105b',
+      // sarvam-30b: sufficient for structured headline extraction (105b reserved for Q&A)
+      model: 'sarvam-30b',
       messages: [
         {
           role: 'system',
@@ -365,6 +373,18 @@ app.post('/api/extract-headlines', async (req: express.Request, res: express.Res
 // ════════════════════════════════════════════════════
 
 import { classifyTopic } from './services/topicClassifier.js';
+
+// ════════════════════════════════════════════════════
+// TTS ROUTE — Text-to-speech via Sarvam Bulbul v3
+// ════════════════════════════════════════════════════
+
+app.use('/api', ttsRouter);
+
+// ════════════════════════════════════════════════════
+// STT ROUTE — Speech-to-text via Sarvam saaras:v3
+// ════════════════════════════════════════════════════
+
+app.use('/api', sttRouter);
 
 app.post('/api/classify-topics', (req: express.Request, res: express.Response) => {
   try {
@@ -431,6 +451,7 @@ ${(newspaperContext || '').replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').replace(/\n
 ═══ END ═══`;
 
     const payload = {
+      // sarvam-105b: high-quality reasoning needed for open-ended Q&A
       model: 'sarvam-105b',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -463,6 +484,18 @@ ${(newspaperContext || '').replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '').replace(/\n
   }
 });
 
+// ─── Transliterate router ───
+app.use('/api', transliterateRouter);
+
+// ─── Language detect router ───
+app.use('/api', languageDetectRouter);
+
+// ─── Doc Translate router — full PDF translation via Sarvam translatepdf ───
+app.use('/api', docTranslateRouter);
+
+// ─── STT Batch router — async audio transcription via Sarvam batch STT API ───
+app.use('/api', sttBatchRouter);
+
 // ─── Error handler ───
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Server error:', err.message);
@@ -474,8 +507,9 @@ export { app };
 // Only start listening when run directly (not when imported by tests)
 const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
 if (isMain || process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`API key: ${API_KEY ? 'configured' : 'MISSING'}`);
   });
+  attachSTTStreamServer(server);
 }
