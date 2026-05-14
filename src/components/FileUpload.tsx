@@ -173,7 +173,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
         <div className="space-y-4">
           {/* Header hint */}
           <p className="text-center text-xs text-text-muted italic">
-            Choose how you want to bring your newspaper in
+            Choose how you want to bring your news in
           </p>
 
           {/* Three option cards */}
@@ -195,7 +195,7 @@ export default function FileUpload({ onFileSelect, currentFile, disabled }: File
                   <rect x="28" y="20" width="8" height="8" rx="1" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
                 </svg>
               </div>
-              <p className="font-heading text-sm font-semibold text-text-primary">Newspaper Scan</p>
+              <p className="font-heading text-sm font-semibold text-text-primary">News Scan</p>
               <p className="text-xs text-text-muted italic leading-tight">Upload a JPG, PNG or PDF scan of any page</p>
               <p className="text-[10px] text-text-muted/60 leading-tight">Try Dainik Bhaskar, Mathrubhumi, or Dinamalar</p>
             </button>

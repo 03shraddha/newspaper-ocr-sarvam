@@ -261,10 +261,10 @@ function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="font-display text-xl sm:text-2xl text-text-primary tracking-wide">
-                Chat with a Regional Newspaper
+                Chat with Regional News
               </h1>
               <p className="font-heading text-xs sm:text-sm text-text-secondary mt-0.5 italic hidden sm:block">
-                Upload a regional newspaper. Ask questions. Get answers in any language.
+                Upload regional news. Ask questions. Get answers in any language.
               </p>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">

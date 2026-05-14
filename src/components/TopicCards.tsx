@@ -15,7 +15,7 @@ export default function TopicCards({ headlines, onSelectTopic }: TopicCardsProps
     return (
       <div className="text-center py-12 text-text-muted font-heading animate-fade-in">
         <p className="text-lg">No topics identified</p>
-        <p className="text-sm mt-1">Try the Chat tab to ask questions about the newspaper content</p>
+        <p className="text-sm mt-1">Try the Chat tab to ask questions about the news content</p>
       </div>
     );
   }

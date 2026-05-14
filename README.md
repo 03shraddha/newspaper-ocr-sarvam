@@ -1,14 +1,14 @@
-# Chat with a Regional Newspaper
+# Chat with Regional News
 
-**An AI-powered newspaper intelligence system for India's 22 official languages.**
+**An AI-powered news intelligence system for India's 22 official languages.**
 
-Upload a regional newspaper in any Indian language — as a PDF, image, or audio recording. The app extracts every word, identifies headlines, auto-detects the source language, translates to your chosen language, classifies stories by topic, and lets you have a full conversation with the content — all through Sarvam AI's India-native language stack.
+Upload regional news in any Indian language — as a PDF, image, or audio recording. The app extracts every word, identifies headlines, auto-detects the source language, translates to your chosen language, classifies stories by topic, and lets you have a full conversation with the content — all through Sarvam AI's India-native language stack.
 
 ---
 
 ## Why This Exists
 
-India publishes newspapers in 22 official languages across 13 distinct scripts. A farmer in Karnataka reading *Kannada Prabha* and a policy researcher in Delhi reading the *Hindustan Times* are consuming the same national story through completely different linguistic lenses. This app bridges that gap: upload any regional newspaper page, and within seconds you can read it in any Indian language, ask questions about the content, hear headlines read aloud, and speak your questions instead of typing them.
+India publishes news in 22 official languages across 13 distinct scripts. A farmer in Karnataka reading *Kannada Prabha* and a policy researcher in Delhi reading the *Hindustan Times* are consuming the same national story through completely different linguistic lenses. This app bridges that gap: upload any regional news page, and within seconds you can read it in any Indian language, ask questions about the content, hear headlines read aloud, and speak your questions instead of typing them.
 
 The core technical challenge is building a pipeline that can reliably go from a scanned PDF (often with mixed scripts, complex layouts, and print artifacts) to structured, translated, queryable, voice-accessible content — using AI models that understand Indian languages natively, not as an afterthought.
 
@@ -87,7 +87,7 @@ The system uses **every Sarvam AI API** across three layers: ingestion, processi
 | Vision | `POST /vision` | sarvam-vision 3B VLM | Single-image OCR, `extract_as_markdown` |
 | Language Identification | `POST /text-lid` | — | Auto-detect source language from OCR text |
 | Chat Completions | `POST /v1/chat/completions` | sarvam-30b | Headline extraction fallback (fast, cheap) |
-| Chat Completions | `POST /v1/chat/completions` | sarvam-105b | Conversational Q&A over newspaper content |
+| Chat Completions | `POST /v1/chat/completions` | sarvam-105b | Conversational Q&A over news content |
 | Translate | `POST /translate` | mayura:v1 | Translation for 11 core Indian languages |
 | Translate | `POST /translate` | sarvam-translate:v1 | Translation for all 22 Indian languages |
 | Transliterate | `POST /transliterate` | — | Native script → Roman toggle on headlines |
@@ -95,7 +95,7 @@ The system uses **every Sarvam AI API** across three layers: ingestion, processi
 | Speech-to-Text (REST) | `POST /speech-to-text` | saaras:v3 | Mic button → transcript in chat input |
 | Speech-to-Text (WebSocket) | `WSS /speech-to-text/ws` | saaras:v3 | Live streaming transcription panel |
 | Speech-to-Text (Batch) | `POST /speech-to-text/job/v1` | saaras:v3 | Long audio upload (podcasts, radio, up to 60 min) |
-| Doc Translate | `POST /parse/translatepdf` | — | Download full translated PDF of the newspaper |
+| Doc Translate | `POST /parse/translatepdf` | — | Download full translated PDF of the uploaded content |
 
 ---
 
@@ -257,7 +257,7 @@ Set `DEMO_MODE=true` in `.env` to use mock responses without hitting any Sarvam 
 
 ## Design
 
-The visual identity draws from Indian print culture: terracotta and sandalwood tones, typewriter fonts (Special Elite, Courier Prime) for headings, and ornamental dividers that echo traditional newspaper layouts. A tricolor gradient (saffron → gold → indigo) runs along the header border. Dark mode shifts to warm charcoal tones rather than pure black.
+The visual identity draws from Indian print culture: terracotta and sandalwood tones, typewriter fonts (Special Elite, Courier Prime) for headings, and ornamental dividers that echo traditional news layouts. A tricolor gradient (saffron → gold → indigo) runs along the header border. Dark mode shifts to warm charcoal tones rather than pure black.
 
 All 13 Indic scripts render correctly through system fonts and a dedicated `.font-indic` class targeting fonts with broad Unicode coverage for Indian scripts.
 
