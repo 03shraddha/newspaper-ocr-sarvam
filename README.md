@@ -19,157 +19,62 @@ The core technical challenge is building a pipeline that can reliably go from a 
 The system uses **every Sarvam AI API** across three layers: ingestion, processing, and interaction. Here is the complete data flow.
 
 ```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                            INPUT LAYER                                       ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌─────────────┐ ║
-║   │   PDF File   │   │  Image File  │   │  Audio File  │   │  Live Mic   │ ║
-║   │  (≤200 MB)   │   │  JPG/PNG/    │   │  MP3/WAV/    │   │  (browser   │ ║
-║   │  newspaper   │   │  WebP/TIFF   │   │  AAC up to   │   │  MediaRec-  │ ║
-║   │  or document │   │  single page │   │  60 minutes  │   │  order API) │ ║
-║   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘   └──────┬──────┘ ║
-╚══════════╪══════════════════╪══════════════════╪══════════════════╪═════════╝
-           │                  │                  │                  │
-           │                  │                  │          ┌───────┴──────────┐
-           │                  │                  │          │  Voice Mode?     │
-           │                  │                  │          │  REST (≤30s clip)│
-           │                  │                  │          │  or Live Stream? │
-           │                  │                  │          └───┬──────────┬───┘
-           │                  │                  │              │          │
-           ▼                  ▼                  ▼              ▼          ▼
-  ┌─────────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌────────┐
-  │ Sarvam Document │ │ Sarvam Vision│ │ Sarvam STT   │ │ STT REST │ │ STT WS │
-  │  Intelligence   │ │    API       │ │  Batch API   │ │ saaras:  │ │saaras: │
-  │ sarvam-vision   │ │sarvam-vision │ │  saaras:v3   │ │   v3     │ │  v3    │
-  │     3B VLM      │ │   3B VLM     │ │ Async job:   │ │ POST     │ │ WSS    │
-  │                 │ │              │ │ create→upload│ │/speech-  │ │stream  │
-  │ Async job flow: │ │ Sync POST:   │ │ →start→poll→ │ │to-text   │ │PCM 16k │
-  │ create job      │ │ /vision with │ │ download     │ │ 25s      │ │binary  │
-  │ → presigned PUT │ │ prompt_type= │ │ Speaker      │ │timeout   │ │chunks  │
-  │ → /start        │ │ extract_as_  │ │ diarization  │ │ audio/   │ │→JSON   │
-  │ → poll /status  │ │ markdown     │ │ supported    │ │webm blob │ │events  │
-  │ → download ZIP  │ │              │ │              │ │          │ │        │
-  │ → extract .md   │ │              │ │              │ │          │ │        │
-  └────────┬────────┘ └──────┬───────┘ └──────┬───────┘ └────┬─────┘ └───┬────┘
-           │                  │                │              │            │
-           └──────────────────┴────────────────┘              └─────┬──────┘
-                                    │                               │
-                                    ▼                               │
-                        ┌───────────────────────┐                   │
-                        │  Raw Text / Markdown  │                   │
-                        │                       │                   │
-                        │  OCR output preserves │                   │
-                        │  structure: headings  │                   │
-                        │  as #/##, bold as **  │                   │
-                        │  columns in order     │                   │
-                        └────────────┬──────────┘                   │
-                                     │                              │
-                                     ▼                              │
-╔════════════════════════════════════════════════════════════════════╪══════════╗
-║                         PROCESSING PIPELINE                        │          ║
-╠════════════════════════════════════════════════════════════════════╪══════════╣
-║                                                                    │          ║
-║  ┌─────────────────────────────────────────────────────────────┐  │          ║
-║  │  STAGE 1 — Language Auto-Detection                          │  │          ║
-║  │                                                             │  │          ║
-║  │  Sarvam text-lid API  ·  POST /api/detect-language          │  │          ║
-║  │  Sends first 600 chars of OCR text                         │  │          ║
-║  │  Returns: { language_code: "hi-IN", script: "Deva" }       │  │          ║
-║  │  Runs in parallel (fire-and-forget) — never blocks OCR     │  │          ║
-║  │  11 supported languages  ·  falls back gracefully if miss  │  │          ║
-║  └──────────────────────────────────┬──────────────────────────┘  │          ║
-║                                     │  detected source lang        │          ║
-║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
-║  │  STAGE 2 — Headline Extraction  (dual-tier strategy)        │  │          ║
-║  │                                                             │  │          ║
-║  │  Tier 1 — Structural parse  (headlineParser.ts)            │  │          ║
-║  │    Regex over Markdown:  #/##/### headings + **bold** lines │  │          ║
-║  │    Min length 10 chars · deduplicated · zero API cost      │  │          ║
-║  │    Runs synchronously — result in < 1ms                    │  │          ║
-║  │                  ↓ if fewer than 2 headlines found         │  │          ║
-║  │  Tier 2 — AI extraction  (fallback)                        │  │          ║
-║  │    Model: sarvam-30b  (efficient; 105b reserved for Q&A)   │  │          ║
-║  │    Prompt: extract headlines → JSON array                  │  │          ║
-║  │    Temperature 0.1 · max_tokens 2000 · retries on 502/503  │  │          ║
-║  └──────────────────────────────────┬──────────────────────────┘  │          ║
-║                                     │  Headline[]                  │          ║
-║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
-║  │  STAGE 3 — Topic Classification                             │  │          ║
-║  │                                                             │  │          ║
-║  │  Keyword matching on English text  (topicClassifier.ts)    │  │          ║
-║  │  Multi-word phrases score higher than single words         │  │          ║
-║  │  8 topic buckets:                                          │  │          ║
-║  │    💧 Water  ⚡ Power  🌾 Farmers  🏛 Politics              │  │          ║
-║  │    🏏 Sports  📈 Economy  📚 Education  🏥 Health           │  │          ║
-║  │                                                             │  │          ║
-║  │  Classification needs English — three paths:               │  │          ║
-║  │    source=EN → classify directly                           │  │          ║
-║  │    target=EN → classify after translation (reuse)          │  │          ║
-║  │    neither  → extra EN translation pass for classify only  │  │          ║
-║  └──────────────────────────────────┬──────────────────────────┘  │          ║
-║                                     │  classified Headline[]       │          ║
-║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
-║  │  STAGE 4 — Translation                                      │  │          ║
-║  │                                                             │  │          ║
-║  │  Model auto-selected by target language:                   │  │          ║
-║  │    mayura:v1          — core 11 langs · 4 modes · 1k chars │  │          ║
-║  │    sarvam-translate:v1 — all 22 langs · formal · 2k chars  │  │          ║
-║  │                                                             │  │          ║
-║  │  Batched in groups of 4 concurrent requests               │  │          ║
-║  │  Each resolved promise triggers immediate React state update│  │          ║
-║  │  → user sees headlines stream in, not batch-at-end        │  │          ║
-║  │  AbortController 10s timeout per call · 2 retries          │  │          ║
-║  └──────────────────────────────────┬──────────────────────────┘  │          ║
-║                                     │  translated Headline[]       │          ║
-║  ┌──────────────────────────────────▼──────────────────────────┐  │          ║
-║  │  STAGE 5 — Chat Context Assembly                            │  │          ║
-║  │                                                             │  │          ║
-║  │  Full OCR text (capped at 10,000 chars) injected into      │  │          ║
-║  │  sarvam-105b system prompt alongside:                       │  │          ║
-║  │    • Topic index: each bucket + its headline list          │  │          ║
-║  │    • Language instruction: always respond in {targetLang}  │  │          ║
-║  │    • Last 10 turns of conversation history                 │  │          ║
-║  │  Base64 image blocks stripped from OCR before injection    │  │          ║
-║  └─────────────────────────────────────────────────────────────┘  │          ║
-║                                                                    │          ║
-╚════════════════════════════════════════════════════════════════════╪══════════╝
-                                     │                              │
-                                     ▼                              ▼
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                          OUTPUT / INTERACTION LAYER                          ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────────────────┐ ║
-║  │  HEADLINES TAB  │  │   TOPICS TAB     │  │        CHAT TAB            │ ║
-║  │                 │  │                  │  │                            │ ║
-║  │  Translated     │  │  8 topic cards   │  │  Q&A over full OCR text    │ ║
-║  │  headlines with │  │  with grouped    │  │  Model: sarvam-105b        │ ║
-║  │  topic badges   │  │  headline counts │  │  128k context window       │ ║
-║  │                 │  │  and summaries   │  │  Responds in target lang   │ ║
-║  │ ┌─────────────┐ │  └──────────────────┘  │                            │ ║
-║  │ │ 🔊 Speaker  │ │                        │  Voice input:              │ ║
-║  │ │  button     │ │  ┌──────────────────┐  │  ┌──────────────────────┐  │ ║
-║  │ │             │ │  │  DOWNLOAD TAB    │  │  │ [🎤 Mic] REST STT    │  │ ║
-║  │ │ Sarvam TTS  │ │  │                  │  │  │  record → transcribe  │  │ ║
-║  │ │ bulbul:v3   │ │  │  Translated PDF  │  │  │  → fills input box   │  │ ║
-║  │ │ 11 langs    │ │  │  download via    │  │  └──────────────────────┘  │ ║
-║  │ │ en-IN fbk   │ │  │  Sarvam Doc      │  │  ┌──────────────────────┐  │ ║
-║  │ │ 15s timeout │ │  │  Translate API   │  │  │ [⚡ Live] WS Stream  │  │ ║
-║  │ └─────────────┘ │  │  /parse/         │  │  │  PCM 16kHz → saaras  │  │ ║
-║  │                 │  │  translatepdf    │  │  │  → live transcript   │  │ ║
-║  │ ┌─────────────┐ │  │  120s timeout    │  │  │  panel overlay       │  │ ║
-║  │ │ Aa/अ Toggle │ │  │  streams PDF     │  │  └──────────────────────┘  │ ║
-║  │ │             │ │  │  directly to     │  │                            │ ║
-║  │ │ Transliterate│ │  │  browser         │  │  Each assistant response:  │ ║
-║  │ │ API          │ │  └──────────────────┘  │  ┌──────────────────────┐  │ ║
-║  │ │ native→Roman │ │                        │  │ 🔊 Speaker button    │  │ ║
-║  │ │ in-memory    │ │                        │  │  bulbul:v3 TTS       │  │ ║
-║  │ │ cache        │ │                        │  │  auto-speak toggle   │  │ ║
-║  │ └─────────────┘ │                        │  └──────────────────────┘  │ ║
-║  └─────────────────┘                        └────────────────────────────┘ ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                  INPUT                                        │
+├───────────────────┬──────────────────┬─────────────────┬─────────────────────┤
+│   PDF / Image     │   Long Audio     │  Short Mic Clip │     Live Mic        │
+│                   │   (up to 60 min) │  (up to 30s)    │                     │
+│ Sarvam Vision /   │  STT Batch API   │  STT REST API   │  STT WebSocket      │
+│ Doc Intelligence  │  saaras:v3       │  saaras:v3      │  saaras:v3          │
+│ sarvam-vision 3B  │  async: create   │  POST audio →   │  PCM 16kHz chunks   │
+│ sync POST or      │  → upload →      │  transcript     │  → base64 JSON      │
+│ async job → ZIP   │  start → poll    │                 │  → live text        │
+│ → markdown        │  → transcript    │                 │                     │
+└─────────┬─────────┴────────┬─────────┴────────┬────────┴──────────┬──────────┘
+          │                  │                  │                   │
+          └──────────────────┴──────────────────┘                   │
+                             │                                       │
+                             ▼                              fills chat input
+                       ┌───────────┐                        from transcript
+                       │ Raw Text  │
+                       └─────┬─────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────────────────┐
+│                            PROCESSING                                         │
+│                                                                               │
+│  1. Detect language    text-lid API — runs in parallel, never blocks OCR     │
+│                                                                               │
+│  2. Extract headlines  regex on #/## markdown headings (< 1ms, zero cost)   │
+│                        → if fewer than 2 found: sarvam-30b AI fallback       │
+│                                                                               │
+│  3. Classify topics    keyword scoring → 8 buckets                           │
+│                        Politics · Economy · Farmers · Sports · Health…       │
+│                                                                               │
+│  4. Translate          mayura:v1 for 11 core langs                           │
+│                        sarvam-translate:v1 for all 22 langs                  │
+│                        4 concurrent requests · each result streams to UI     │
+│                                                                               │
+│  5. Build chat context full OCR text (≤10k chars) + topic index injected    │
+│                        into sarvam-105b system prompt · last 10 turns kept  │
+└────────────────────────────┬────────────────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────────────────┐
+│                             OUTPUT                                             │
+├──────────────────────┬──────────────────────┬───────────────────────────────┤
+│    Headlines Tab     │     Topics Tab        │          Chat Tab             │
+│                      │                       │                               │
+│  Translated          │  8 category cards     │  Q&A over full OCR text      │
+│  headlines with      │  with story counts    │  sarvam-105b · 128k context  │
+│  topic badges        │  and summaries        │  responds in target language  │
+│                      │                       │                               │
+│  🔊 TTS button       │  Download Tab         │  🎤 Mic button → STT REST    │
+│  bulbul:v3 · 11 langs│  Doc Translate API    │  ⚡ Live voice → STT Stream  │
+│  en-IN fallback      │  → full translated    │  🔊 Speaker on each response │
+│                      │  PDF streamed to      │  auto-speak toggle           │
+│  Aa/अ Transliterate  │  browser              │                               │
+│  native → Roman      │                       │                               │
+│  in-memory cache     │                       │                               │
+└──────────────────────┴──────────────────────┴───────────────────────────────┘
 ```
 
 ---
