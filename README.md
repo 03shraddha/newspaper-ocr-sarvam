@@ -6,6 +6,16 @@ Upload regional news in any Indian language — as a PDF, image, or audio record
 
 ---
 
+## Who This Is For
+
+- **Researchers & journalists** tracking news across Indian language regions
+- **NRIs & diaspora** staying connected to hometown regional press
+- **Policy makers & NGOs** needing multilingual news intelligence
+- **Educators** teaching media literacy across language barriers
+- **Developers** exploring India-native AI APIs end-to-end
+
+---
+
 ## Why This Exists
 
 India publishes news in 22 official languages across 13 distinct scripts. A farmer in Karnataka reading *Kannada Prabha* and a policy researcher in Delhi reading the *Hindustan Times* are consuming the same national story through completely different linguistic lenses. This app bridges that gap: upload any regional news page, and within seconds you can read it in any Indian language, ask questions about the content, hear headlines read aloud, and speak your questions instead of typing them.
