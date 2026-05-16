@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { Headline, TopicKey } from '../lib/types';
 import { TOPIC_META } from '../lib/topics';
 import { useTransliterate } from '../hooks/useTransliterate';
@@ -39,7 +39,7 @@ export default function HeadlineCard({ headline, index, showOriginal, sourceLang
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const staggerClass = `stagger-${Math.min(index + 1, 10)}`;
+  const staggerClass = useMemo(() => `stagger-${Math.min(index + 1, 10)}`, [index]);
 
   return (
     <div className={`bg-surface-elevated rounded-xl border border-border p-4 card-accent transition-all hover:shadow-sm group animate-slide-in-up ${staggerClass}`}>

@@ -20,7 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const sourceLang = fields.language?.[0];
     const buffer = fs.readFileSync(file.filepath);
 
-    const MAX_RETRIES = 3;
+    // Retry logic mirrors fetchWithRetry in _utils.ts; kept separate because FormData body cannot be reused across attempts
+    const MAX_RETRIES = 2;
     let lastError = '';
     let lastStatus = 500;
 
@@ -51,7 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error(`Vision API error (attempt ${attempt}/${MAX_RETRIES}):`, lastStatus, lastError);
 
       if (![502, 503, 504].includes(lastStatus) || attempt === MAX_RETRIES) break;
-      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
     }
 
     fs.unlinkSync(file.filepath);

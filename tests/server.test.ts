@@ -877,3 +877,122 @@ describe('POST /api/stt-batch-status', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
+
+// ─── POST /api/vision ─────────────────────────────────────────────────────────
+
+describe('POST /api/vision', () => {
+  it('returns 400 when no file is uploaded', async () => {
+    const res = await request.post('/api/vision').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it('returns OCR content when Sarvam Vision API succeeds', async () => {
+    mockFetch.mockResolvedValueOnce(okJson({
+      content: '# Farmers March to Delhi\n\nThousands of farmers...',
+      request_id: 'vis-req-001',
+    }));
+
+    const res = await request
+      .post('/api/vision')
+      .attach('file', Buffer.from('fake-image-data'), {
+        filename: 'newspaper.jpg',
+        contentType: 'image/jpeg',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.content).toContain('Farmers March');
+    expect(res.body.request_id).toBe('vis-req-001');
+  });
+
+  it('retries on 502 and succeeds on second attempt', async () => {
+    mockFetch
+      .mockResolvedValueOnce(new Response('Bad Gateway', { status: 502 }))
+      .mockResolvedValueOnce(okJson({ content: 'OCR result after retry', request_id: 'vis-retry' }));
+
+    const res = await request
+      .post('/api/vision')
+      .attach('file', Buffer.from('fake-image-data'), {
+        filename: 'newspaper.png',
+        contentType: 'image/png',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe('OCR result after retry');
+  });
+});
+
+// ─── POST /api/doc-intelligence ───────────────────────────────────────────────
+
+describe('POST /api/doc-intelligence', () => {
+  it('returns 400 when no file is uploaded', async () => {
+    const res = await request.post('/api/doc-intelligence').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it('returns jobId when job is created and started successfully', async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson({ job_id: 'doc-job-abc' }))      // create
+      .mockResolvedValueOnce(okJson({                                  // upload-files
+        upload_urls: { 'document.pdf': { file_url: 'https://storage.example.com/put' } },
+      }))
+      .mockResolvedValueOnce(new Response('', { status: 200 }))       // PUT file
+      .mockResolvedValueOnce(new Response('', { status: 200 }));      // start
+
+    const res = await request
+      .post('/api/doc-intelligence')
+      .attach('file', Buffer.from('%PDF-1.4 content'), {
+        filename: 'newspaper.pdf',
+        contentType: 'application/pdf',
+      })
+      .field('language', 'hi-IN');
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobId).toBe('doc-job-abc');
+  });
+});
+
+// ─── POST /api/doc-status ─────────────────────────────────────────────────────
+
+describe('POST /api/doc-status', () => {
+  it('returns 400 when jobId is missing', async () => {
+    const res = await request.post('/api/doc-status').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/jobId/i);
+  });
+
+  it('returns running state while job is in progress', async () => {
+    mockFetch.mockResolvedValueOnce(okJson({ job_state: 'Running' }));
+
+    const res = await request.post('/api/doc-status').send({ jobId: 'doc-job-abc' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.state).toBe('Running');
+    expect(res.body.content).toBeUndefined();
+  });
+
+  it('returns markdown content when job completes', async () => {
+    const fakeZipEntry = '# Extracted Headline\n\nNewspaper content here.';
+    // Create a minimal AdmZip buffer for testing
+    // Since we cannot easily create a real zip in tests, mock the download to return
+    // a pre-made zip buffer containing a .md file
+    const AdmZip = (await import('adm-zip')).default;
+    const zip = new AdmZip();
+    zip.addFile('output.md', Buffer.from(fakeZipEntry));
+    const zipBuffer = zip.toBuffer();
+
+    mockFetch
+      .mockResolvedValueOnce(okJson({ job_state: 'Completed' }))     // status
+      .mockResolvedValueOnce(okJson({                                  // download-files
+        download_urls: { 'output.zip': { file_url: 'https://storage.example.com/dl' } },
+      }))
+      .mockResolvedValueOnce(new Response(zipBuffer, { status: 200 })); // zip download
+
+    const res = await request.post('/api/doc-status').send({ jobId: 'doc-job-done' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.state).toBe('Completed');
+    expect(res.body.content).toContain('Extracted Headline');
+  });
+});

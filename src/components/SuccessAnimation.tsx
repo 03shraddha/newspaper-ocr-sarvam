@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface SuccessAnimationProps {
   show: boolean;
@@ -15,20 +15,22 @@ interface Particle {
 }
 
 export default function SuccessAnimation({ show }: SuccessAnimationProps) {
-  const [particles, setParticles] = useState<Particle[]>([]);
   const [visible, setVisible] = useState(false);
+
+  const particles = useMemo<Particle[]>(() => {
+    if (!show) return [];
+    return Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      delay: Math.random() * 0.5,
+      size: 4 + Math.random() * 6,
+    }));
+  }, [show]);
 
   useEffect(() => {
     if (show) {
       setVisible(true);
-      const newParticles: Particle[] = Array.from({ length: 20 }, (_, i) => ({
-        id: i,
-        x: Math.random() * 100,
-        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-        delay: Math.random() * 0.5,
-        size: 4 + Math.random() * 6,
-      }));
-      setParticles(newParticles);
       const timer = setTimeout(() => setVisible(false), 2500);
       return () => clearTimeout(timer);
     }

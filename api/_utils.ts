@@ -2,6 +2,7 @@
 
 export const API_KEY = process.env.SARVAM_API_KEY || '';
 
+// Must stay in sync with EXTENDED_LANGS in src/lib/languages.ts
 export const EXTENDED_LANGS = [
   'as-IN', 'brx-IN', 'doi-IN', 'kok-IN', 'ks-IN', 'mai-IN',
   'mni-IN', 'ne-IN', 'sa-IN', 'sat-IN', 'sd-IN', 'ur-IN',

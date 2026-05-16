@@ -239,7 +239,10 @@ function App() {
     setSourceLang('auto');
   };
 
-  const targetLangName = LANGUAGES.find((l) => l.code === targetLang)?.name || targetLang;
+  const targetLangName = useMemo(
+    () => LANGUAGES.find((l) => l.code === targetLang)?.name || targetLang,
+    [targetLang],
+  );
 
   const topicSummaryText = useMemo(() => {
     const summaries = buildTopicSummaries(headlines);

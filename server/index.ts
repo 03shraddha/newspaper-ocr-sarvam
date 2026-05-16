@@ -32,7 +32,7 @@ const upload = multer({
   },
 });
 
-// ─── Translation helper (reused by ingestion + API) ───
+// ─── Translation helper ───
 const EXTENDED_LANGS = ['as-IN','brx-IN','doi-IN','kok-IN','ks-IN','mai-IN','mni-IN','ne-IN','sa-IN','sat-IN','sd-IN','ur-IN'];
 
 // ─── Retry helper for transient API errors ───

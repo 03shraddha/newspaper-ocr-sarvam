@@ -3,9 +3,10 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/doc-intelligence.ts": {
-      "maxDuration": 60
-    }
+    "api/doc-intelligence.ts": { "maxDuration": 60 },
+    "api/chat.ts": { "maxDuration": 60 },
+    "api/translate.ts": { "maxDuration": 60 },
+    "api/vision.ts": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },
