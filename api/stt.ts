@@ -11,6 +11,12 @@ const STT_ENDPOINT = 'https://api.sarvam.ai/speech-to-text';
 const MAX_RETRIES = 2;
 const TIMEOUT_MS = 30_000;
 
+// saaras:v3 supports only these 12 language codes — anything else causes a 400
+const STT_SUPPORTED_LANGS = new Set([
+  'hi-IN', 'bn-IN', 'gu-IN', 'kn-IN', 'ml-IN', 'mr-IN',
+  'od-IN', 'pa-IN', 'sa-IN', 'ta-IN', 'te-IN', 'en-IN',
+]);
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -25,7 +31,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     tempPath = file.filepath;
     const buffer = fs.readFileSync(file.filepath);
     const mimeType = file.mimetype || 'audio/webm';
-    const languageCode = fields.language_code?.[0] || 'hi-IN';
+    const rawLang = fields.language_code?.[0] || '';
+    // Only pass language_code if saaras:v3 supports it; otherwise let the API auto-detect
+    const languageCode = STT_SUPPORTED_LANGS.has(rawLang) ? rawLang : '';
 
     const baseType = mimeType.split(';')[0];
     const ext =

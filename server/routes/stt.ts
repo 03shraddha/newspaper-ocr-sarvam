@@ -12,6 +12,12 @@ const API_KEY = process.env.SARVAM_API_KEY || '';
 const TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
 
+// saaras:v3 supports only these 12 language codes — anything else causes a 400
+const STT_SUPPORTED_LANGS = new Set([
+  'hi-IN', 'bn-IN', 'gu-IN', 'kn-IN', 'ml-IN', 'mr-IN',
+  'od-IN', 'pa-IN', 'sa-IN', 'ta-IN', 'te-IN', 'en-IN',
+]);
+
 const audioUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -124,7 +130,9 @@ router.post('/stt', audioUpload.single('file'), async (req: Request, res: Respon
     return;
   }
 
-  const languageCode = (req.body?.language_code as string | undefined) || 'hi-IN';
+  const rawLang = (req.body?.language_code as string | undefined) || '';
+  // Only pass language_code if saaras:v3 supports it; otherwise let the API auto-detect
+  const languageCode = STT_SUPPORTED_LANGS.has(rawLang) ? rawLang : '';
 
   try {
     const result = await fetchSTTWithRetry(file.buffer, file.mimetype, languageCode);

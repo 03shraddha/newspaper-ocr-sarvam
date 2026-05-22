@@ -1,5 +1,42 @@
 import { useState, useRef } from 'react';
 
+async function convertToWav(audioBlob: Blob): Promise<Blob> {
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const audioContext = new AudioContext();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  await audioContext.close();
+
+  const { length, sampleRate, numberOfChannels } = audioBuffer;
+
+  // Mix down to mono
+  const mono = new Float32Array(length);
+  for (let c = 0; c < numberOfChannels; c++) {
+    const ch = audioBuffer.getChannelData(c);
+    for (let i = 0; i < length; i++) mono[i] += ch[i] / numberOfChannels;
+  }
+
+  // Float32 → Int16 PCM
+  const pcm = new Int16Array(length);
+  for (let i = 0; i < length; i++) {
+    const s = Math.max(-1, Math.min(1, mono[i]));
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+
+  // Build WAV container
+  const wav = new ArrayBuffer(44 + pcm.byteLength);
+  const v = new DataView(wav);
+  const str = (off: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + pcm.byteLength, true);
+  str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, pcm.byteLength, true);
+  new Uint8Array(wav, 44).set(new Uint8Array(pcm.buffer));
+
+  return new Blob([wav], { type: 'audio/wav' });
+}
+
 export function useSTT() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -63,10 +100,10 @@ export function useSTT() {
     setIsTranscribing(true);
     setError(null);
     try {
+      // Sarvam STT only accepts mp3/wav/etc — convert webm/opus to WAV
+      const wavBlob = await convertToWav(audioBlob);
       const formData = new FormData();
-      const baseType = audioBlob.type.split(';')[0];
-      const ext = baseType.includes('ogg') ? 'ogg' : baseType.includes('mp4') ? 'mp4' : baseType.includes('flac') ? 'flac' : baseType.includes('wav') ? 'wav' : baseType.includes('aac') ? 'aac' : baseType.includes('mp3') || baseType.includes('mpeg') ? 'mp3' : 'webm';
-      formData.append('file', audioBlob, `recording.${ext}`);
+      formData.append('file', wavBlob, 'recording.wav');
       formData.append('language_code', langCode);
 
       const controller = new AbortController();
